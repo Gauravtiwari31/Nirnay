@@ -1,5 +1,5 @@
 /* ---------------------------------------------------------------------------
-   Control Systems Design Bench — theme and layout.
+   Nirnay — theme and layout.
 
    The custom properties on :root are the single source of truth for colour.
    src/ui/plots.js reads them off document.documentElement with getComputedStyle,
