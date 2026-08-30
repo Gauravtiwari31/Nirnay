@@ -1,5 +1,5 @@
 /**
- * WebMCP site tools for the Control Systems Design Bench.
+ * WebMCP site tools for the Nirnay.
  *
  * The three plots on this page are canvas renderings. An agent cannot read them,
  * and a screenshot only lets it guess at numbers. These tools expose the actual
