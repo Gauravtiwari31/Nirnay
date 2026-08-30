@@ -91,6 +91,20 @@ code {
   letter-spacing: 0.02em;
 }
 
+.wordmark-dev {
+  margin-left: 7px;
+  color: var(--muted);
+  font-size: 16px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+
+.tagline em {
+  color: var(--fg);
+  font-style: normal;
+  font-weight: 600;
+}
+
 .tagline {
   margin: 5px 0 0;
   max-width: 84ch;
@@ -218,7 +232,7 @@ code {
 .panel-sub {
   margin: -4px 0 12px;
   color: var(--muted);
-  font: 12px/1.4 var(--mono);
+  font: 12px/1.4 var(--sans);
 }
 
 .foot {
@@ -310,7 +324,7 @@ button:hover {
 }
 
 button:active {
-  background: #080d13;
+  background: var(--line-soft);
 }
 
 .btn-primary {
@@ -542,12 +556,12 @@ canvas {
 
 .chip[data-pass="true"] {
   background: var(--ok);
-  color: #04160f;
+  color: var(--bg);
 }
 
 .chip[data-pass="false"] {
   background: var(--danger);
-  color: #1c0406;
+  color: var(--bg);
 }
 
 /* ------------------------------------------------------------------ agent log */

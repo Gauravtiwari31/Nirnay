@@ -1,5 +1,5 @@
 /**
- * WebMCP site tools for the Nirnay.
+ * WebMCP site tools for Nirnay.
  *
  * The three plots on this page are canvas renderings. An agent cannot read them,
  * and a screenshot only lets it guess at numbers. These tools expose the actual
@@ -607,7 +607,7 @@ const TOOLS = [
 /**
  * Register every site tool on the top-level document, if this browser supports WebMCP.
  *
- * Feature-detection is deliberate rather than defensive: the bench is a complete,
+ * Feature-detection is deliberate rather than defensive: Nirnay is a complete,
  * usable instrument on its own, and a browser without WebMCP should get the page
  * working normally rather than an error.
  *

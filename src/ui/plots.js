@@ -1,5 +1,5 @@
 /**
- * Canvas rendering for the Nirnay.
+ * Canvas rendering for Nirnay.
  *
  * Three panels are drawn from one `analyse()` object (see the module contract):
  *   - step response : unit-step output, settling band, peak and settling markers

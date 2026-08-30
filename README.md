@@ -1,5 +1,7 @@
 # Nirnay
 
+*निर्णय — "the verdict".*
+
 A browser-based control-systems tuning workbench where a person and an AI agent work the same
 loop at the same time. You watch the step response, Bode plot and root locus redraw as the gains
 change. The agent reads the actual numbers behind those plots through WebMCP site tools —

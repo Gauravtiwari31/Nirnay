@@ -1,7 +1,7 @@
 /**
  * Polynomial root finding by the Durand-Kerner (Weierstrass) method.
  *
- * Every other numeric module in the bench ultimately depends on this file: poles,
+ * Every other numeric module in Nirnay ultimately depends on this file: poles,
  * zeros, damping ratios, stability, the pole-zero map and the root locus are all root
  * sets. It therefore does more than a textbook Durand-Kerner loop — see the comment
  * block on `polyRoots` for the refinements and why each one is needed.
@@ -246,7 +246,7 @@ function canonicalise(roots, tol) {
  * Durand-Kerner (Weierstrass) simultaneous root finder.
  *
  * Three refinements sit on top of the bare iteration, each of which the plants in this
- * bench actually need:
+ * Nirnay actually needs:
  *
  * 1. Roots at the origin are peeled off as trailing zero coefficients BEFORE
  *    iterating. A zero constant term drags every iterate toward the origin together,

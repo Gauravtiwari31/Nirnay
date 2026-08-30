@@ -1,5 +1,5 @@
 /**
- * Single source of truth for the Nirnay.
+ * Single source of truth for Nirnay.
  *
  * The plots, the readout panel and the WebMCP site tools all read from this module: callers
  * mutate state through the setters and read every derived quantity through `analyse()`.
