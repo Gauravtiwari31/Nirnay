@@ -1,0 +1,613 @@
+/* ---------------------------------------------------------------------------
+   Control Systems Design Bench — theme and layout.
+
+   The custom properties on :root are the single source of truth for colour.
+   src/ui/plots.js reads them off document.documentElement with getComputedStyle,
+   so the canvases and the chrome around them always agree.
+   --------------------------------------------------------------------------- */
+
+:root {
+  color-scheme: dark;
+
+  /* Plot palette — also consumed by src/ui/plots.js. */
+  --bg: #0a0e13;
+  --panel: #121a23;
+  --grid: #1d2833;
+  --axis: #4a6072;
+  --fg: #e8eef5;
+  --muted: #90a4b8;
+  --accent: #4cc9f0;
+  --accent-2: #ffb35c;
+  --warn: #ffd166;
+  --ok: #35d3a0;
+  --danger: #ff6b6b;
+
+  /* Shell-only tokens. */
+  --panel-2: #0d141c;
+  --line: #223140;
+  --line-soft: #18222d;
+  --radius: 8px;
+
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, "Cascadia Mono", SFMono-Regular, Menlo, Consolas,
+          "Liberation Mono", monospace;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+html {
+  background: var(--bg);
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 14px/1.5 var(--sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+code {
+  font-family: var(--mono);
+  font-size: 0.92em;
+  color: var(--accent);
+  background: var(--panel-2);
+  border: 1px solid var(--line-soft);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+
+/* --------------------------------------------------------------------- header */
+
+.topbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px 24px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(180deg, var(--panel), var(--panel-2));
+}
+
+.topbar h1 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.tagline {
+  margin: 5px 0 0;
+  max-width: 84ch;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.status {
+  margin: 2px 0 0;
+  flex: 0 0 auto;
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel-2);
+  color: var(--muted);
+  font: 11.5px/1 var(--mono);
+  letter-spacing: 0.01em;
+}
+
+.status::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+  vertical-align: -1px;
+}
+
+.status[data-state="on"] {
+  color: var(--ok);
+  border-color: color-mix(in srgb, var(--ok) 40%, var(--line));
+}
+
+.status[data-state="on"]::before {
+  background: var(--ok);
+}
+
+.status[data-state="error"] {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--line));
+}
+
+.status[data-state="error"]::before {
+  background: var(--danger);
+}
+
+/* --------------------------------------------------------------------- layout */
+
+.bench {
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+  grid-template-columns: 320px minmax(0, 1fr) 320px;
+  grid-template-areas: "controls plots readout";
+  align-items: start;
+}
+
+.col-controls {
+  grid-area: controls;
+}
+
+.col-plots {
+  grid-area: plots;
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: start;
+}
+
+.col-readout {
+  grid-area: readout;
+}
+
+.col-controls,
+.col-readout {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+
+/* Two sidebars plus two plots side by side stops fitting well below this. */
+@media (max-width: 1280px) {
+  .bench {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas:
+      "controls readout"
+      "plots plots";
+  }
+}
+
+@media (max-width: 820px) {
+  .bench {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "controls"
+      "plots"
+      "readout";
+  }
+
+  .col-plots {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* --------------------------------------------------------------------- panels */
+
+.panel {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+
+.panel > h2 {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.panel-sub {
+  margin: -4px 0 12px;
+  color: var(--muted);
+  font: 12px/1.4 var(--mono);
+}
+
+.foot {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+.field-error {
+  margin: 8px 0 0;
+  color: var(--danger);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* --------------------------------------------------------------------- inputs */
+
+.field + .field,
+.gain + .gain,
+.gain + .field {
+  margin-top: 12px;
+}
+
+.field > label,
+.gain > label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 5px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* The symbol and its subscript have to be one flex item, or space-between pushes
+   them to opposite ends of the label. */
+.gain-name {
+  white-space: nowrap;
+}
+
+.hint,
+.qual {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.gain-inputs {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 88px;
+  gap: 10px;
+  align-items: center;
+}
+
+input[type="number"],
+input[type="text"],
+select {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-2);
+  color: var(--fg);
+  font: 13px/1.3 var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+input[type="number"]:hover,
+input[type="text"]:hover,
+select:hover {
+  border-color: var(--axis);
+}
+
+button {
+  width: 100%;
+  margin-top: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-2);
+  color: var(--fg);
+  font: 500 12.5px var(--sans);
+  cursor: pointer;
+}
+
+button:hover {
+  border-color: var(--axis);
+}
+
+button:active {
+  background: #080d13;
+}
+
+.btn-primary {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--line));
+  color: var(--accent);
+}
+
+.btn-primary:hover {
+  border-color: var(--accent);
+}
+
+/* Range inputs need per-engine pseudo-elements; the rules cannot be merged, because a
+   selector list containing one unknown pseudo-element drops the whole rule. */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 20px;
+  margin: 0;
+  background: transparent;
+  cursor: ew-resize;
+}
+
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--grid);
+}
+
+input[type="range"]::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--grid);
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+  border: 2px solid var(--panel);
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--panel);
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* Set by src/ui/controls.js when the gain sits outside the slider's 0..50 span, so a
+   pinned thumb never reads as the real value. */
+input[type="range"][data-clamped="true"]::-webkit-slider-thumb {
+  background: var(--warn);
+}
+
+input[type="range"][data-clamped="true"]::-moz-range-thumb {
+  background: var(--warn);
+}
+
+/* ---------------------------------------------------------------------- plots */
+
+.plot-card {
+  margin: 0;
+  padding: 10px 12px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+
+.plot-wide {
+  grid-column: 1 / -1;
+}
+
+.plot-card figcaption {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 3px 10px;
+  margin-bottom: 8px;
+}
+
+.plot-card h2 {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.cap-note {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+canvas {
+  display: block;
+  width: 100%;
+  border-radius: 6px;
+  background: var(--panel-2);
+}
+
+#step-canvas {
+  height: 252px;
+}
+
+#bode-canvas,
+#pz-canvas {
+  height: 320px;
+}
+
+/* -------------------------------------------------------------------- metrics */
+
+.badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 4px;
+}
+
+.badge {
+  padding: 4px 9px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  font: 600 10.5px/1.2 var(--mono);
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+
+.badge[data-stable="true"] {
+  color: var(--ok);
+  border-color: color-mix(in srgb, var(--ok) 45%, var(--line));
+  background: color-mix(in srgb, var(--ok) 12%, transparent);
+}
+
+.badge[data-stable="false"] {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 50%, var(--line));
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+}
+
+.badge[data-pass="true"] {
+  color: var(--ok);
+  border-color: color-mix(in srgb, var(--ok) 45%, var(--line));
+  background: color-mix(in srgb, var(--ok) 12%, transparent);
+}
+
+.badge[data-pass="false"] {
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 40%, var(--line));
+  background: color-mix(in srgb, var(--warn) 10%, transparent);
+}
+
+.metric-group > h3 {
+  margin: 14px 0 6px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line-soft);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.metrics {
+  margin: 0;
+}
+
+.metric {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 10px;
+  padding: 3px 0;
+}
+
+.metric dt {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.metric dd {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 6px;
+  margin: 0;
+}
+
+.metric .value {
+  color: var(--fg);
+  font: 13px/1.3 var(--mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.metric .unit {
+  min-width: 3.4em;
+  color: var(--muted);
+  font-size: 10.5px;
+  text-align: left;
+}
+
+/* The dominant pole prints as "a + bj" and needs the whole row. */
+.metric-wide {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.metric-wide dd {
+  justify-content: flex-start;
+}
+
+.metric-wide .unit {
+  min-width: 0;
+}
+
+.chip {
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: var(--grid);
+  color: var(--muted);
+  font: 600 9.5px/1.2 var(--mono);
+  letter-spacing: 0.1em;
+}
+
+.chip[data-pass="true"] {
+  background: var(--ok);
+  color: #04160f;
+}
+
+.chip[data-pass="false"] {
+  background: var(--danger);
+  color: #1c0406;
+}
+
+/* ------------------------------------------------------------------ agent log */
+
+.log {
+  max-height: 250px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.log-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+.log-line {
+  display: grid;
+  grid-template-columns: 62px minmax(0, 1fr);
+  gap: 8px;
+  margin: 0;
+  padding: 5px 0 5px 8px;
+  border-left: 2px solid transparent;
+  border-bottom: 1px solid var(--line-soft);
+  font: 11.5px/1.45 var(--mono);
+}
+
+/* Newest entry only — a static marker rather than an animation, so it reads cleanly on video. */
+.log-line:first-child {
+  border-left-color: var(--accent);
+}
+
+.log-line:last-child {
+  border-bottom: 0;
+}
+
+.log-time {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.log-msg {
+  color: var(--fg);
+  overflow-wrap: anywhere;
+}
+
+/* ----------------------------------------------------------------- agent note */
+
+.panel-note p {
+  margin: 0 0 9px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.panel-note p:last-child {
+  margin-bottom: 0;
+}
+
+.panel-note strong {
+  color: var(--fg);
+  font-weight: 600;
+}

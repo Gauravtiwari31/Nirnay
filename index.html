@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Control Systems Design Bench</title>
+  <meta
+    name="description"
+    content="Interactive PID tuning bench with live step response, Bode and root-locus plots, and WebMCP site tools that expose the numeric simulation results to an AI agent."
+  />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <h1>Control Systems Design Bench</h1>
+      <p class="tagline">
+        Tune a PID controller against a plant and watch the step response, Bode plot and root
+        locus redraw in real time &mdash; while an AI agent reads the same numbers you do.
+      </p>
+    </div>
+    <p class="status" id="mcp-status" data-state="pending" role="status" aria-live="polite">
+      Checking for WebMCP&hellip;
+    </p>
+  </header>
+
+  <main class="bench">
+    <!-- ------------------------------------------------------------------- controls -->
+    <aside class="col col-controls" aria-label="Controller, plant and specification">
+      <section class="panel">
+        <h2>PID controller</h2>
+        <p class="panel-sub">C(s) = K<sub>p</sub> + K<sub>i</sub>/s + K<sub>d</sub>&middot;Ns/(s+N)</p>
+
+        <div class="gain">
+          <label for="kp-number"><span class="gain-name">K<sub>p</sub></span><span class="hint">proportional</span></label>
+          <div class="gain-inputs">
+            <input type="range" id="kp-slider" min="0" max="50" step="0.01"
+                   aria-label="Proportional gain slider" />
+            <input type="number" id="kp-number" step="0.01" inputmode="decimal" />
+          </div>
+        </div>
+
+        <div class="gain">
+          <label for="ki-number"><span class="gain-name">K<sub>i</sub></span><span class="hint">integral</span></label>
+          <div class="gain-inputs">
+            <input type="range" id="ki-slider" min="0" max="50" step="0.01"
+                   aria-label="Integral gain slider" />
+            <input type="number" id="ki-number" step="0.01" inputmode="decimal" />
+          </div>
+        </div>
+
+        <div class="gain">
+          <label for="kd-number"><span class="gain-name">K<sub>d</sub></span><span class="hint">derivative</span></label>
+          <div class="gain-inputs">
+            <input type="range" id="kd-slider" min="0" max="50" step="0.01"
+                   aria-label="Derivative gain slider" />
+            <input type="number" id="kd-number" step="0.01" inputmode="decimal" />
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="n-number"><span class="gain-name">N</span><span class="hint">derivative filter pole</span></label>
+          <input type="number" id="n-number" min="1" max="10000" step="1" inputmode="decimal" />
+        </div>
+
+        <p class="foot">
+          Sliders span 0&ndash;50. Type any value into the number field to go outside that range.
+        </p>
+      </section>
+
+      <section class="panel">
+        <h2>Plant</h2>
+
+        <div class="field">
+          <label for="plant-select">Preset</label>
+          <select id="plant-select"></select>
+        </div>
+        <div class="field">
+          <label for="plant-num">Numerator</label>
+          <input type="text" id="plant-num" spellcheck="false" autocomplete="off"
+                 aria-describedby="coeff-help" />
+        </div>
+        <div class="field">
+          <label for="plant-den">Denominator</label>
+          <input type="text" id="plant-den" spellcheck="false" autocomplete="off"
+                 aria-describedby="coeff-help" />
+        </div>
+
+        <p class="foot" id="coeff-help">
+          Coefficients separated by spaces or commas, highest power first:
+          <code>1 0.6 1</code> means s&sup2; + 0.6s + 1.
+        </p>
+        <button type="button" id="plant-apply" class="btn-primary">Apply custom plant</button>
+        <p class="field-error" id="plant-error" role="alert" hidden></p>
+      </section>
+
+      <section class="panel">
+        <h2>Design specification</h2>
+
+        <div class="field">
+          <label for="spec-overshoot">Max overshoot<span class="hint">%</span></label>
+          <input type="number" id="spec-overshoot" min="0" step="0.5" inputmode="decimal" />
+        </div>
+        <div class="field">
+          <label for="spec-settling">Max settling time<span class="hint">s</span></label>
+          <input type="number" id="spec-settling" min="0" step="0.1" inputmode="decimal" />
+        </div>
+        <div class="field">
+          <label for="spec-sse">Max steady-state error<span class="hint">absolute</span></label>
+          <input type="number" id="spec-sse" min="0" step="0.005" inputmode="decimal" />
+        </div>
+        <div class="field">
+          <label for="spec-pm">Min phase margin<span class="hint">deg</span></label>
+          <input type="number" id="spec-pm" min="0" step="1" inputmode="decimal" />
+        </div>
+      </section>
+    </aside>
+
+    <!-- ---------------------------------------------------------------------- plots -->
+    <section class="col col-plots" aria-label="Simulation plots">
+      <figure class="plot-card plot-wide">
+        <figcaption>
+          <h2>Step response</h2>
+          <span class="cap-note">closed loop &middot; unit step &middot; reference and &plusmn;2% band shown</span>
+        </figcaption>
+        <canvas id="step-canvas" role="img"
+                aria-label="Closed-loop unit step response against time">
+          Closed-loop step response plot. The numbers behind it are listed in the metrics panel.
+        </canvas>
+      </figure>
+
+      <figure class="plot-card">
+        <figcaption>
+          <h2>Bode</h2>
+          <span class="cap-note">open loop &middot; magnitude and phase</span>
+        </figcaption>
+        <canvas id="bode-canvas" role="img"
+                aria-label="Open-loop Bode magnitude and phase plot">
+          Open-loop Bode plot. Gain and phase margins are listed in the metrics panel.
+        </canvas>
+      </figure>
+
+      <figure class="plot-card">
+        <figcaption>
+          <h2>Poles &amp; zeros</h2>
+          <span class="cap-note">root locus &middot; closed-loop poles</span>
+        </figcaption>
+        <canvas id="pz-canvas" role="img"
+                aria-label="Pole-zero map with root locus branches">
+          Pole-zero map with root-locus branches. The dominant pole is listed in the metrics panel.
+        </canvas>
+      </figure>
+    </section>
+
+    <!-- -------------------------------------------------------------------- readout -->
+    <aside class="col col-readout" aria-label="Metrics and agent activity">
+      <section class="panel">
+        <h2>Metrics</h2>
+
+        <p class="badges">
+          <span class="badge" id="stability-badge" data-stable="true">&mdash;</span>
+          <span class="badge" id="spec-badge" data-pass="false">&mdash;</span>
+        </p>
+
+        <div class="metric-group">
+          <h3>Time domain</h3>
+          <dl class="metrics">
+            <div class="metric" data-metric="overshoot">
+              <dt>Overshoot</dt>
+              <dd><span class="value">&mdash;</span><span class="unit">%</span><span class="chip">&mdash;</span></dd>
+            </div>
+            <div class="metric" data-metric="riseTime">
+              <dt>Rise time <span class="qual">10&ndash;90%</span></dt>
+              <dd><span class="value">&mdash;</span><span class="unit">s</span></dd>
+            </div>
+            <div class="metric" data-metric="settlingTime">
+              <dt>Settling time <span class="qual">&plusmn;2%</span></dt>
+              <dd><span class="value">&mdash;</span><span class="unit">s</span><span class="chip">&mdash;</span></dd>
+            </div>
+            <div class="metric" data-metric="peakValue">
+              <dt>Peak value</dt>
+              <dd><span class="value">&mdash;</span><span class="unit"></span></dd>
+            </div>
+            <div class="metric" data-metric="peakTime">
+              <dt>Peak time</dt>
+              <dd><span class="value">&mdash;</span><span class="unit">s</span></dd>
+            </div>
+            <div class="metric" data-metric="steadyStateError">
+              <dt>Steady-state error</dt>
+              <dd><span class="value">&mdash;</span><span class="unit"></span><span class="chip">&mdash;</span></dd>
+            </div>
+          </dl>
+        </div>
+
+        <div class="metric-group">
+          <h3>Frequency domain <span class="qual">open loop</span></h3>
+          <dl class="metrics">
+            <div class="metric" data-metric="gainMargin">
+              <dt>Gain margin</dt>
+              <dd><span class="value">&mdash;</span><span class="unit">dB</span></dd>
+            </div>
+            <div class="metric" data-metric="phaseMargin">
+              <dt>Phase margin</dt>
+              <dd><span class="value">&mdash;</span><span class="unit">deg</span><span class="chip">&mdash;</span></dd>
+            </div>
+            <div class="metric" data-metric="gainCrossover">
+              <dt>Gain crossover</dt>
+              <dd><span class="value">&mdash;</span><span class="unit">rad/s</span></dd>
+            </div>
+            <div class="metric" data-metric="phaseCrossover">
+              <dt>Phase crossover</dt>
+              <dd><span class="value">&mdash;</span><span class="unit">rad/s</span></dd>
+            </div>
+          </dl>
+        </div>
+
+        <div class="metric-group">
+          <h3>Dominant closed-loop pole</h3>
+          <dl class="metrics">
+            <div class="metric metric-wide" data-metric="dominantPole">
+              <dt>Pole</dt>
+              <dd><span class="value">&mdash;</span><span class="unit"></span></dd>
+            </div>
+            <div class="metric" data-metric="zeta">
+              <dt>Damping ratio &zeta;</dt>
+              <dd><span class="value">&mdash;</span><span class="unit"></span></dd>
+            </div>
+            <div class="metric" data-metric="wn">
+              <dt>Natural frequency &omega;<sub>n</sub></dt>
+              <dd><span class="value">&mdash;</span><span class="unit">rad/s</span></dd>
+            </div>
+          </dl>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Agent activity</h2>
+        <div class="log" id="agent-log" role="log" aria-live="polite"
+             aria-label="Agent tool call log">
+          <p class="log-empty">No tool calls yet. Anything an agent does through WebMCP is logged here.</p>
+        </div>
+      </section>
+
+      <section class="panel panel-note">
+        <h2>For agents</h2>
+        <p>
+          The plots on this page are <code>&lt;canvas&gt;</code> renderings. There is no DOM text to
+          scrape and no way to recover a number from the pixels. An AI agent connected over WebMCP
+          does not have to try: this page registers site tools that hand back the
+          <strong>simulation output itself</strong> &mdash; overshoot, rise and settling time,
+          steady-state error, gain and phase margin, closed-loop pole locations.
+        </p>
+        <p>
+          The same tools set the controller gains and the plant, and every write returns the
+          resulting metrics, so an agent can close the tuning loop: adjust, measure, adjust again.
+          You watch the curves move while it works, and you can take any slider back at any moment.
+        </p>
+      </section>
+    </aside>
+  </main>
+
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
