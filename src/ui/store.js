@@ -1,5 +1,5 @@
 /**
- * Single source of truth for the Control Systems Design Bench.
+ * Single source of truth for the Nirnay.
  *
  * The plots, the readout panel and the WebMCP site tools all read from this module: callers
  * mutate state through the setters and read every derived quantity through `analyse()`.
