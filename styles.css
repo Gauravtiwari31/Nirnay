@@ -7,31 +7,32 @@
    --------------------------------------------------------------------------- */
 
 :root {
-  color-scheme: dark;
+  color-scheme: light;
 
   /* Plot palette — also consumed by src/ui/plots.js. */
-  --bg: #0a0e13;
-  --panel: #121a23;
-  --grid: #1d2833;
-  --axis: #4a6072;
-  --fg: #e8eef5;
-  --muted: #90a4b8;
-  --accent: #4cc9f0;
-  --accent-2: #ffb35c;
-  --warn: #ffd166;
-  --ok: #35d3a0;
-  --danger: #ff6b6b;
+  --bg: #ffffff;        /* paper: plot ground and panel fill */
+  --panel: #ffffff;
+  --grid: #e7eaee;      /* hairline graph rule */
+  --axis: #98a1ac;
+  --fg: #171b21;
+  --muted: #616b78;
+  --accent: #1f4e9c;    /* ink-blue pen: the response */
+  --accent-2: #b03a2e;  /* oxide-red pen: reference and limits */
+  --warn: #9a6b1f;      /* ochre: tolerance band */
+  --ok: #1b7a4b;        /* green: pass */
+  --danger: #b03a2e;
 
   /* Shell-only tokens. */
-  --panel-2: #0d141c;
-  --line: #223140;
-  --line-soft: #18222d;
-  --radius: 8px;
+  --panel-2: #f4f5f7;   /* desk: page ground behind the paper */
+  --line: #dbdfe5;
+  --line-soft: #eceef1;
+  --radius: 2px;
 
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --mono: ui-monospace, "Cascadia Mono", SFMono-Regular, Menlo, Consolas,
           "Liberation Mono", monospace;
 }
+
 
 *,
 *::before,
@@ -49,7 +50,7 @@ html {
 
 body {
   margin: 0;
-  background: var(--bg);
+  background: var(--panel-2);   /* was: var(--bg) */
   color: var(--fg);
   font: 14px/1.5 var(--sans);
   -webkit-font-smoothing: antialiased;
