@@ -1,5 +1,5 @@
 /**
- * Transfer-function algebra for the control bench.
+ * Transfer-function algebra for the Nirnay.
  *
  * Everything in here is pure numerics over `{num, den}` pairs whose coefficients
  * are plain arrays in descending powers of s (`[1, 2, 3]` is `s^2 + 2s + 3`), so
