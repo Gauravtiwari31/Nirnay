@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Bench browser tests</title>
+  <style>
+    body { font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; margin: 2rem; background: #10131a; color: #d7dce5; }
+    h1 { font-size: 1.1rem; }
+    li { margin: .15rem 0; }
+    .pass { color: #46d17f; }
+    .fail { color: #ff6b6b; }
+    #summary { margin: 1rem 0; padding: .6rem .8rem; border-radius: 6px; font-weight: 700; }
+    #summary[data-ok="true"] { background: #12301f; color: #46d17f; }
+    #summary[data-ok="false"] { background: #331617; color: #ff6b6b; }
+    #stage { display: none; }
+  </style>
+</head>
+<body>
+  <h1>Control Systems Design Bench &mdash; browser integration tests</h1>
+  <p>
+    These cover what <code>node tests/run.mjs</code> cannot reach: the WebMCP tool layer, and the
+    path from a tool call through the store to the on-page controls. Serve the repository over
+    http and open this file; the summary below turns green when everything passes.
+  </p>
+  <div id="summary" data-ok="false">running&hellip;</div>
+  <ol id="results"></ol>
+
+  <!-- The real control markup is loaded into here from index.html, so these tests also
+       verify that every element id controls.js looks up actually exists in the page. -->
+  <div id="stage"></div>
+
+<script type="module">
+import { registerWebMCPTools } from "../src/mcp/tools.js";
+import { getState, analyse, setGains, setPlant, setSpec } from "../src/ui/store.js";
+import { initControls } from "../src/ui/controls.js";
+
+const results = document.getElementById("results");
+let passed = 0;
+let failed = 0;
+
+/**
+ * Record one assertion.
+ * @param {string} name what was checked
+ * @param {boolean} ok whether it held
+ * @param {string} [detail] extra context shown on failure
+ * @returns {void}
+ */
+function check(name, ok, detail = "") {
+  const li = document.createElement("li");
+  li.className = ok ? "pass" : "fail";
+  li.textContent = `${ok ? "PASS" : "FAIL"}  ${name}${ok || !detail ? "" : ` — ${detail}`}`;
+  results.appendChild(li);
+  if (ok) passed += 1; else failed += 1;
+}
+
+/**
+ * Run one test body, turning a throw into a failure rather than halting the suite.
+ * @param {string} name test name
+ * @param {() => Promise<void>|void} fn test body
+ * @returns {Promise<void>}
+ */
+async function test(name, fn) {
+  try {
+    await fn();
+  } catch (err) {
+    check(name, false, String(err && err.stack ? err.stack : err));
+  }
+}
+
+/** Extract the plain text of a WebMCP tool result. */
+const bodyOf = (r) => r.content.map((c) => c.text).join("\n");
+
+// --- load the real control markup ------------------------------------------
+const html = await (await fetch("../index.html")).text();
+const parsed = new DOMParser().parseFromString(html, "text/html");
+document.getElementById("stage").innerHTML = parsed.body.innerHTML;
+
+await test("index.html markup drives initControls without error", () => {
+  initControls(document.getElementById("stage"));
+  check("index.html markup drives initControls without error", true);
+});
+
+// --- register against a stubbed modelContext -------------------------------
+const registered = [];
+document.modelContext = {
+  registerTool(descriptor) {
+    registered.push(descriptor);
+    return { unregister() {} };
+  },
+};
+
+const handle = await registerWebMCPTools();
+const byName = Object.fromEntries(registered.map((t) => [t.name, t]));
+
+const READ = ["get_system", "run_step_response", "get_frequency_response", "get_pole_zero_map", "evaluate_design"];
+const WRITE = ["set_controller_gains", "set_plant", "set_design_spec"];
+
+await test("registration", () => {
+  check("registerWebMCPTools reports available", handle.available === true);
+  check("all 8 tools registered", registered.length === 8, `got ${registered.length}`);
+  for (const name of [...READ, ...WRITE]) {
+    check(`tool ${name} is registered`, Boolean(byName[name]));
+  }
+});
+
+await test("schemas", () => {
+  for (const t of registered) {
+    const s = t.inputSchema;
+    check(`${t.name}: inputSchema is an object schema`, s && s.type === "object");
+    check(`${t.name}: additionalProperties is false`, s.additionalProperties === false);
+    check(`${t.name}: description is substantial`, typeof t.description === "string" && t.description.length > 80);
+    for (const [prop, def] of Object.entries(s.properties || {})) {
+      check(`${t.name}.${prop}: has a real description`,
+        typeof def.description === "string" && def.description.length > 20,
+        JSON.stringify(def.description));
+    }
+    // Every parameter on this surface is optional by design.
+    check(`${t.name}: no parameters marked required`, !s.required || s.required.length === 0,
+      JSON.stringify(s.required));
+    check(`${t.name}: execute is a function`, typeof t.execute === "function");
+  }
+});
+
+await test("readOnlyHint is accurate", () => {
+  for (const name of READ) {
+    check(`${name}: readOnlyHint true`, byName[name].annotations.readOnlyHint === true);
+  }
+  for (const name of WRITE) {
+    check(`${name}: readOnlyHint false`, byName[name].annotations.readOnlyHint === false);
+  }
+});
+
+// --- behaviour --------------------------------------------------------------
+await test("get_system reports the live design", async () => {
+  const body = bodyOf(await byName.get_system.execute({}));
+  check("get_system mentions the gains", /Kp=/.test(body), body);
+  check("get_system states stability", /STABLE|UNSTABLE/.test(body), body);
+  check("get_system includes a spec verdict", /SPECS? (MET|NOT MET)/.test(body), body);
+});
+
+await test("write tool changes state and returns post-change metrics", async () => {
+  setPlant({ key: "second-order" });
+  setGains({ Kp: 1, Ki: 0, Kd: 0, N: 100 });
+  const before = analyse().metrics.overshoot;
+
+  const body = bodyOf(await byName.set_controller_gains.execute({ Kp: 12, Ki: 4, Kd: 3 }));
+  const s = getState();
+  check("store gains updated", s.Kp === 12 && s.Ki === 4 && s.Kd === 3, JSON.stringify(s));
+  check("result echoes the new gains", body.includes("Kp=12"), body);
+  check("result carries post-change step metrics", /overshoot/.test(body), body);
+  check("result carries post-change margins", /PM |GM /.test(body), body);
+  check("result carries the spec verdict", /SPECS? (MET|NOT MET)/.test(body), body);
+  check("the design actually changed", analyse().metrics.overshoot !== before);
+
+  // The demo-critical path: an agent's write must move the human-facing controls.
+  const stage = document.getElementById("stage");
+  check("Kp number input repainted from the store",
+    Number(stage.querySelector("#kp-number").value) === 12,
+    stage.querySelector("#kp-number").value);
+  check("Kp slider repainted from the store",
+    Number(stage.querySelector("#kp-slider").value) === 12,
+    stage.querySelector("#kp-slider").value);
+  check("Kd number input repainted from the store",
+    Number(stage.querySelector("#kd-number").value) === 3,
+    stage.querySelector("#kd-number").value);
+});
+
+await test("partial gain updates leave the others alone", async () => {
+  setGains({ Kp: 5, Ki: 2, Kd: 1 });
+  await byName.set_controller_gains.execute({ Kp: 9 });
+  const s = getState();
+  check("only Kp changed", s.Kp === 9 && s.Ki === 2 && s.Kd === 1, JSON.stringify(s));
+});
+
+await test("set_plant by preset", async () => {
+  const body = bodyOf(await byName.set_plant.execute({ preset: "dc-motor" }));
+  check("plantKey updated", getState().plantKey === "dc-motor", getState().plantKey);
+  check("result names the preset", body.includes("dc-motor"), body);
+  check("result carries post-change metrics", /Closed loop:/.test(body), body);
+});
+
+await test("set_plant with custom coefficients", async () => {
+  const body = bodyOf(await byName.set_plant.execute({ numerator: [1], denominator: [1, 2, 1] }));
+  const s = getState();
+  check("custom plant installed", s.plantKey === null && s.plant.den.join() === "1,2,1", JSON.stringify(s.plant));
+  check("result renders the transfer function", /s\^2 \+ 2s \+ 1/.test(body), body);
+});
+
+await test("invalid input returns a readable error, never a throw", async () => {
+  const both = bodyOf(await byName.set_plant.execute({ preset: "dc-motor", numerator: [1], denominator: [1, 1] }));
+  check("preset plus custom is rejected", both.startsWith("Error:"), both);
+
+  const bad = bodyOf(await byName.set_controller_gains.execute({ Kp: "loud" }));
+  check("non-numeric gain is rejected", bad.startsWith("Error:"), bad);
+  check("error names the offending parameter", /Kp/.test(bad), bad);
+
+  const empty = bodyOf(await byName.set_plant.execute({}));
+  check("empty set_plant explains what is needed", empty.startsWith("Error:"), empty);
+
+  const unknown = bodyOf(await byName.set_plant.execute({ preset: "teapot" }));
+  check("unknown preset is rejected", unknown.startsWith("Error:"), unknown);
+});
+
+await test("read tools stay read-only", async () => {
+  setPlant({ key: "second-order" });
+  setGains({ Kp: 4, Ki: 1, Kd: 0.5 });
+  const snapshot = JSON.stringify(getState());
+  for (const name of READ) await byName[name].execute({});
+  check("no read tool mutated the state", JSON.stringify(getState()) === snapshot);
+});
+
+await test("optional samples are returned on request", async () => {
+  const without = bodyOf(await byName.run_step_response.execute({}));
+  const with_ = bodyOf(await byName.run_step_response.execute({ include_samples: true }));
+  check("samples omitted by default", !without.includes("samples"), without);
+  check("samples included when asked", with_.includes("samples (t s, y):"), with_);
+
+  const bode = bodyOf(await byName.get_frequency_response.execute({ include_samples: true }));
+  check("bode samples included when asked", bode.includes("samples (w rad/s"), bode);
+});
+
+await test("evaluate_design reports per-spec margins", async () => {
+  setSpec({ overshoot: 10, settlingTime: 4, steadyStateError: 0.02, phaseMargin: 45 });
+  const body = bodyOf(await byName.evaluate_design.execute({}));
+  for (const label of ["overshoot", "settling time", "steady-state error", "phase margin"]) {
+    check(`evaluate_design covers ${label}`, body.includes(label), body);
+  }
+  check("evaluate_design gives signed margins", /(inside|outside) by /.test(body), body);
+});
+
+await test("set_design_spec retargets the evaluation", async () => {
+  const body = bodyOf(await byName.set_design_spec.execute({ max_overshoot_percent: 3, min_phase_margin_deg: 70 }));
+  const s = getState();
+  check("targets updated", s.spec.overshoot === 3 && s.spec.phaseMargin === 70, JSON.stringify(s.spec));
+  check("result re-evaluates against them", body.includes("target <= 3"), body);
+});
+
+await test("an unstable design is reported as such", async () => {
+  await byName.set_plant.execute({ preset: "unstable" });
+  await byName.set_controller_gains.execute({ Kp: 0.1, Ki: 0, Kd: 0 });
+  const body = bodyOf(await byName.get_pole_zero_map.execute({}));
+  check("pole-zero map states instability", /UNSTABLE/.test(body), body);
+  check("pole-zero map lists poles", /closed-loop poles:/.test(body), body);
+});
+
+await test("the activity log records agent calls", () => {
+  const log = document.getElementById("stage").querySelector("#agent-log");
+  check("agent-log exists in index.html", Boolean(log));
+  check("agent-log received entries", log && log.children.length > 0, log ? String(log.children.length) : "no log");
+});
+
+await test("unregister is callable", () => {
+  handle.unregister();
+  check("unregister runs cleanly", true);
+});
+
+const summary = document.getElementById("summary");
+summary.dataset.ok = failed === 0 ? "true" : "false";
+summary.textContent = `${passed} passed, ${failed} failed`;
+document.title = failed === 0 ? `ALL PASS (${passed})` : `FAILED ${failed}/${passed + failed}`;
+</script>
+</body>
+</html>
