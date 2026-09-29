@@ -834,10 +834,31 @@ test("freq: margins of L = 1/(s(s+1)(s+2))", () => {
   assertClose(r.mag[0], 1, 1e-6, "|L| at the reported gain crossover must be 1 to bisection accuracy");
 });
 
+test("freq: a phase sitting on -180 deg has no gain margin", () => {
+  // L = 1/s^2: L(jw) = -1/w^2, real and negative, so the phase is exactly -180 deg at
+  // every frequency. |L| = 1 at w = 1, giving PM = 180 - 180 = 0. The phase never
+  // crosses -180, so there is no phase crossover and no gain margin: the closed loop
+  // s^2 + K is marginal at every K. Before this was handled, the first grid point was
+  // taken as a crossover and a meaningless GM of -160 dB at 1e-4 rad/s came back.
+  const m = margins({ num: [1], den: [1, 0, 0] });
+  assertNoBadNumbers(m, "margins of 1/s^2");
+  assertClose(m.gainCrossoverW, 1, 1e-6, "gain crossover of 1/s^2");
+  assertNear(m.phaseMarginDeg, 0, 1e-9, "phase margin of 1/s^2");
+  assertNull(m.phaseCrossoverW, "1/s^2 never crosses -180 deg, so phaseCrossoverW must be null");
+  assertNull(m.gainMargin, "1/s^2 has no gain margin");
+  assertNull(m.gainMarginDb, "1/s^2 has no gain margin in dB");
+  assertEqual(m.phaseOnBoundary, true, "1/s^2 sits on -180 deg everywhere, so phaseOnBoundary");
+
+  // A genuine crossing is not flagged.
+  assertEqual(margins({ num: [1], den: [1, 3, 2, 0] }).phaseOnBoundary, false,
+    "1/(s(s+1)(s+2)) crosses -180 deg, so phaseOnBoundary must be false");
+});
+
 test("freq: margins are null when the loop never crosses", () => {
   // |1/(jw+1)| < 1 for every w > 0 and the phase only reaches -90 deg.
   const m = margins({ num: [1], den: [1, 1] });
   assertNoBadNumbers(m, "margins of 1/(s+1)");
+  assertEqual(m.phaseOnBoundary, false, "1/(s+1) never reaches -180 deg, so phaseOnBoundary must be false");
   assertNull(m.gainCrossoverW, "|1/(s+1)| never reaches 1, so gainCrossoverW must be null");
   assertNull(m.phaseMarginDeg, "with no gain crossover the phase margin must be null");
   assertNull(m.phaseCrossoverW, "1/(s+1) never reaches -180 deg, so phaseCrossoverW must be null");

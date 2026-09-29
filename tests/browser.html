@@ -274,6 +274,12 @@ await test("a missing steady state is explained by where the poles sit", async (
   await byName.set_controller_gains.execute({ Kp: 1 });
   const marginal = bodyOf(await byName.get_system.execute({}));
   check("imaginary-axis poles read as marginal", /marginally stable/.test(marginal), marginal);
+  const freq = bodyOf(await byName.get_frequency_response.execute({}));
+  check("a phase sitting on -180 deg gives no gain margin",
+    /gain margin: +undefined - the open-loop phase sits at -180 deg/.test(freq), freq);
+  check("no grid-edge gain margin is reported", !/e-8|-160 dB/.test(freq), freq);
+  const pz = bodyOf(await byName.get_pole_zero_map.execute({}));
+  check("the critical gain is undefined, not 'none'", /critical gain: undefined/.test(pz), pz);
 
   // Pole at the origin: the DC motor's own integrator with the controller switched off.
   await byName.set_plant.execute({ preset: "dc-motor" });

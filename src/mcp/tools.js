@@ -177,6 +177,23 @@ function noSteadyState(a) {
 }
 
 /**
+ * Describe a missing gain margin. Usually the phase never reaches -180 deg and the margin
+ * is infinite; but a phase sitting on -180 deg at every frequency (L = K/s^2) leaves the
+ * loop marginal at any gain, and calling that "infinite" would be exactly backwards.
+ * @param {{phaseOnBoundary: boolean}} g the `margins` block of an `analyse()` result
+ * @returns {{value: string, reason: string}} the margin as a word, and why
+ */
+function noGainMargin(g) {
+  return g.phaseOnBoundary
+    ? {
+      value: "undefined",
+      reason: "the open-loop phase sits at -180 deg at every frequency, so the loop is " +
+        "marginal at any gain",
+    }
+    : { value: "infinite", reason: "the open-loop phase never reaches -180 deg" };
+}
+
+/**
  * The standard report block returned by every tool that changes something, and by
  * `get_system`. Dense on purpose: one block tells the agent the whole state of the
  * design, so it can decide its next move without another call.
@@ -190,7 +207,7 @@ function report() {
 
   const preset = s.plantKey === null ? "custom" : `preset "${s.plantKey}"`;
   const gm = g.gainMargin === null
-    ? "GM infinite (open-loop phase never reaches -180 deg)"
+    ? `GM ${noGainMargin(g).value} (${noGainMargin(g).reason})`
     : `GM ${n(g.gainMargin)} (${n(g.gainMarginDb)} dB) @ ${n(g.phaseCrossoverW)} rad/s`;
   const pm = g.phaseMarginDeg === null
     ? "PM undefined (|L| never crosses 1, so there is no gain crossover)"
@@ -378,7 +395,7 @@ const TOOLS = [
       );
       lines.push(
         g.gainMargin === null
-          ? "gain margin:      infinite - the open-loop phase never reaches -180 deg"
+          ? `gain margin:      ${noGainMargin(g).value} - ${noGainMargin(g).reason}`
           : `gain margin:      ${n(g.gainMargin)} linear (${n(g.gainMarginDb)} dB) at ` +
             `${n(g.phaseCrossoverW)} rad/s`
       );
@@ -423,12 +440,16 @@ const TOOLS = [
             `${n(a.dominant.zeta)} and natural frequency wn ${n(a.dominant.wn)} rad/s`
       );
       const crit = a.margins.gainMargin;
-      lines.push(
-        crit === null
-          ? "critical gain: none - increasing the loop gain never destabilises this loop"
-          : `critical gain: the loop reaches the stability boundary at ${n(crit)} times the ` +
-            `current gain, with poles crossing the imaginary axis at ${n(a.margins.phaseCrossoverW)} rad/s`
-      );
+      let critLine;
+      if (crit !== null) {
+        critLine = `critical gain: the loop reaches the stability boundary at ${n(crit)} times the ` +
+          `current gain, with poles crossing the imaginary axis at ${n(a.margins.phaseCrossoverW)} rad/s`;
+      } else if (a.margins.phaseOnBoundary) {
+        critLine = `critical gain: undefined - ${noGainMargin(a.margins).reason}`;
+      } else {
+        critLine = "critical gain: none - increasing the loop gain never destabilises this loop";
+      }
+      lines.push(critLine);
       return lines.join("\n");
     },
   },

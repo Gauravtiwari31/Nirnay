@@ -450,7 +450,8 @@ function sanitiseMetrics(m, stable) {
 
 /**
  * @param {object|null} m raw margins output
- * @returns {object} the margins shape, with every non-finite field replaced by null
+ * @returns {object} the margins shape, with every non-finite field replaced by null and
+ *   `phaseOnBoundary` true only when the source says so explicitly
  */
 function sanitiseMargins(m) {
   const source = m === null || typeof m !== "object" ? {} : m;
@@ -460,6 +461,7 @@ function sanitiseMargins(m) {
     phaseMarginDeg: finiteOrNull(source.phaseMarginDeg),
     gainCrossoverW: finiteOrNull(source.gainCrossoverW),
     phaseCrossoverW: finiteOrNull(source.phaseCrossoverW),
+    phaseOnBoundary: source.phaseOnBoundary === true,
   };
 }
 
