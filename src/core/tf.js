@@ -38,9 +38,11 @@ function maxAbs(p) {
  * simulation impossible. Over the common denominator `s(s + N)` this gives
  * `num = [Kp + Kd*N, Kp*N + Ki, Ki*N]`, `den = [1, N, 0]`.
  *
- * The degenerate cases are returned in reduced form rather than carrying a
- * common factor of `s`: an exactly cancelling pole/zero pair is invisible in the
- * maths but shows up as spurious markers on the pole-zero map.
+ * The degenerate cases (P, PI and PD) are returned in reduced form rather than
+ * carrying a common factor: an exactly cancelling pole/zero pair is invisible in
+ * the transfer function, but not in the polynomials. For PD the uncancelled
+ * factor is `s`, and it survives into the closed-loop denominator as an exact
+ * pole at the origin, which would read as a marginally stable loop.
  *
  * @param {number} Kp proportional gain
  * @param {number} Ki integral gain
@@ -58,6 +60,7 @@ export function pidTF(Kp, Ki, Kd, N = 100) {
   }
   if (Ki === 0 && Kd === 0) return { num: [Kp], den: [1] };
   if (Kd === 0) return { num: [Kp, Ki], den: [1, 0] };
+  if (Ki === 0) return { num: [Kp + Kd * N, Kp * N], den: [1, N] };
   return { num: [Kp + Kd * N, Kp * N + Ki, Ki * N], den: [1, N, 0] };
 }
 

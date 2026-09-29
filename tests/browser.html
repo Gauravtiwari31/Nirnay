@@ -172,6 +172,15 @@ await test("partial gain updates leave the others alone", async () => {
   check("only Kp changed", s.Kp === 9 && s.Ki === 2 && s.Kd === 1, JSON.stringify(s));
 });
 
+await test("PD control is not reported as unstable", async () => {
+  setPlant({ key: "second-order" });
+  const body = bodyOf(await byName.set_controller_gains.execute({ Kp: 2, Ki: 0, Kd: 1 }));
+  check("PD loop reads as stable", /Closed loop: STABLE/.test(body), body);
+  check("PD loop has step metrics", /overshoot \d/.test(body), body);
+  check("PD loop has no pole at the origin", !analyse().poles.some((p) => p.re === 0 && p.im === 0),
+    JSON.stringify(analyse().poles));
+});
+
 await test("set_plant by preset", async () => {
   const body = bodyOf(await byName.set_plant.execute({ preset: "dc-motor" }));
   check("plantKey updated", getState().plantKey === "dc-motor", getState().plantKey);

@@ -394,6 +394,33 @@ test("tf: pidTF degenerate forms", () => {
   const pi = pidTF(2, 3, 0);
   assertArrayClose(pi.num, [2, 3], 1e-12, "pidTF(2,3,0).num");
   assertArrayClose(pi.den, [1, 0], 1e-12, "pidTF(2,3,0).den");
+
+  // PD: Kp + Kd*N*s/(s+N) = ((Kp + Kd*N)s + Kp*N)/(s+N), NOT the full form over
+  // s(s+N), whose common factor of s would become a closed-loop pole at the origin.
+  // Kp=2, Kd=1, N=100 -> num [102, 200], den [1, 100]
+  const pd = pidTF(2, 0, 1, 100);
+  assertArrayClose(pd.num, [102, 200], 1e-12, "pidTF(2,0,1,100).num");
+  assertArrayClose(pd.den, [1, 100], 1e-12, "pidTF(2,0,1,100).den");
+
+  // Pure derivative is PD with Kp = 0: Kd*N*s/(s+N) -> num [100, 0], den [1, 100]
+  const d = pidTF(0, 0, 1, 100);
+  assertArrayClose(d.num, [100, 0], 1e-12, "pidTF(0,0,1,100).num");
+  assertArrayClose(d.den, [1, 100], 1e-12, "pidTF(0,0,1,100).den");
+});
+
+test("tf: a PD loop has no spurious pole at the origin", () => {
+  // Default plant 1/(s^2 + 0.6s + 1) under PD with Kp=2, Kd=1, N=100:
+  //   den = (s + 100)(s^2 + 0.6s + 1) + 102s + 200
+  //       = s^3 + 100.6s^2 + 61s + 100 + 102s + 200
+  //       = s^3 + 100.6s^2 + 163s + 300
+  // Routh: 100.6 * 163 = 16397.8 > 300, so every closed-loop pole is in the LHP.
+  const T = closedLoop(series(pidTF(2, 0, 1, 100), { num: [1], den: [1, 0.6, 1] }));
+  assertArrayClose(T.den, [1, 100.6, 163, 300], 1e-12, "closed-loop denominator of the PD loop");
+  const poles = polyRoots(T.den);
+  assertEqual(poles.length, 3, "a third-order closed loop has three poles");
+  for (const p of poles) {
+    assert(p.re < -1e-6, `PD closed-loop pole ${fc(p)} must be in the left half plane`);
+  }
 });
 
 test("tf: pidTF full realizable form", () => {
@@ -403,12 +430,6 @@ test("tf: pidTF full realizable form", () => {
   const c = pidTF(2, 3, 4, 10);
   assertArrayClose(c.num, [42, 23, 30], 1e-12, "pidTF(2,3,4,10).num");
   assertArrayClose(c.den, [1, 10, 0], 1e-12, "pidTF(2,3,4,10).den");
-
-  // Pure derivative: Kd only. Ki === 0 but Kd !== 0, so the full form applies.
-  // num = [0 + 1*100, 0*100 + 0, 0] = [100, 0, 0]
-  const d = pidTF(0, 0, 1, 100);
-  assertArrayClose(d.num, [100, 0, 0], 1e-12, "pidTF(0,0,1,100).num");
-  assertArrayClose(d.den, [1, 100, 0], 1e-12, "pidTF(0,0,1,100).den");
 
   // Default N is 100.
   const e = pidTF(1, 1, 1);
