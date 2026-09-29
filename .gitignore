@@ -14,3 +14,6 @@ npm-debug.log*
 
 # Not used by this project, ignored so a stray install cannot be committed
 node_modules/
+
+# Demo video: far over GitHub's 100 MB file limit, so it is hosted elsewhere and linked
+nirnay.mp4
