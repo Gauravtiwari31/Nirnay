@@ -27,6 +27,12 @@ import { logAgent } from "../ui/controls.js";
 const REAL_EPS = 1e-9;
 
 /**
+ * A pole with |Re| at or below this sits on the imaginary axis. Matches the store's
+ * stability threshold, so "marginal" here and "not stable" there always agree.
+ */
+const AXIS_EPS = 1e-9;
+
+/**
  * Format a number for a tool result: fixed notation where it reads well, scientific
  * where it does not, with trailing zeros trimmed.
  * @param {unknown} v the value
@@ -142,6 +148,35 @@ function formatSpec(spec) {
 }
 
 /**
+ * Explain why a design has no steady state, from where its closed-loop poles sit.
+ *
+ * `finalValue` is null for every closed loop that is not stable, and the causes call
+ * for different fixes: a right-half-plane pole needs the loop stabilised, while a pole
+ * at the origin or on the imaginary axis sits exactly on the boundary. Naming the
+ * wrong one sends the agent after the wrong fix.
+ *
+ * @param {{poles: {re: number, im: number}[]}} a an `analyse()` result
+ * @returns {string} a clause beginning "the closed loop ..."
+ */
+function noSteadyState(a) {
+  const rhp = a.poles.filter((p) => p.re > AXIS_EPS).length;
+  if (rhp > 0) {
+    return `the closed loop is unstable (${rhp} pole${rhp === 1 ? "" : "s"} in the right ` +
+      "half-plane), so the response diverges";
+  }
+  const onAxis = a.poles.filter((p) => Math.abs(p.re) <= AXIS_EPS);
+  if (onAxis.some((p) => Math.abs(p.im) <= AXIS_EPS)) {
+    return "the closed loop has a pole at the origin (a free integrator), so the response " +
+      "ramps instead of settling";
+  }
+  if (onAxis.length > 0) {
+    return "the closed loop is marginally stable (poles on the imaginary axis), so the " +
+      "response oscillates without settling";
+  }
+  return "the closed loop could not be evaluated for this design";
+}
+
+/**
  * The standard report block returned by every tool that changes something, and by
  * `get_system`. Dense on purpose: one block tells the agent the whole state of the
  * design, so it can decide its next move without another call.
@@ -162,7 +197,7 @@ function report() {
     : `PM ${n(g.phaseMarginDeg)} deg @ ${n(g.gainCrossoverW)} rad/s`;
 
   const step = m.finalValue === null
-    ? "Step:  no steady state (the loop contains a free integrator), so overshoot and " +
+    ? `Step:  no steady state - ${noSteadyState(a)}; overshoot, settling time and ` +
       "steady-state error are undefined"
     : `Step:  overshoot ${n(m.overshoot)}% | rise ${n(m.riseTime)} s | settle ` +
       `${n(m.settlingTime)} s | peak ${n(m.peakValue)} @ ${n(m.peakTime)} s | ` +
@@ -286,8 +321,8 @@ const TOOLS = [
       ];
       if (m.finalValue === null) {
         lines.push(
-          "No steady state: the closed loop contains a free integrator, so the response does " +
-          "not converge and overshoot, settling time and steady-state error are undefined."
+          `No steady state: ${noSteadyState(a)}. Overshoot, rise time, settling time and ` +
+          "steady-state error are undefined."
         );
       } else {
         lines.push(

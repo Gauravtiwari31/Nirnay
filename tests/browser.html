@@ -252,6 +252,27 @@ await test("an unstable design is reported as such", async () => {
   check("pole-zero map lists poles", /closed-loop poles:/.test(body), body);
 });
 
+await test("a missing steady state is explained by where the poles sit", async () => {
+  // Right-half-plane poles: T = 0.1/(s^2 - s + 2.1) has no integrator at all.
+  await byName.set_plant.execute({ preset: "unstable" });
+  await byName.set_controller_gains.execute({ Kp: 0.1, Ki: 0, Kd: 0 });
+  const rhp = bodyOf(await byName.run_step_response.execute({}));
+  check("RHP poles are named as the cause", /2 poles in the right half-plane/.test(rhp), rhp);
+  check("RHP case does not blame an integrator", !/integrator/.test(rhp), rhp);
+
+  // Imaginary-axis poles: s^2 + 1 under P control of the double integrator.
+  await byName.set_plant.execute({ preset: "double-integrator" });
+  await byName.set_controller_gains.execute({ Kp: 1 });
+  const marginal = bodyOf(await byName.get_system.execute({}));
+  check("imaginary-axis poles read as marginal", /marginally stable/.test(marginal), marginal);
+
+  // Pole at the origin: the DC motor's own integrator with the controller switched off.
+  await byName.set_plant.execute({ preset: "dc-motor" });
+  await byName.set_controller_gains.execute({ Kp: 0, Ki: 0, Kd: 0 });
+  const origin = bodyOf(await byName.run_step_response.execute({}));
+  check("a pole at the origin is named as a free integrator", /pole at the origin/.test(origin), origin);
+});
+
 await test("the activity log records agent calls", () => {
   const log = document.getElementById("stage").querySelector("#agent-log");
   check("agent-log exists in index.html", Boolean(log));
