@@ -20,8 +20,8 @@ libraries, not even for tests. Every file is a native ES module the browser load
 the whole project deploys by copying the directory to a static host. A pull request that adds a
 `package.json` or a build pipeline will not be merged.
 
-Everything under `src/core/` must stay free of DOM access, because `tests/run.mjs` imports those
-modules straight into Node 22.
+Everything under `src/core/`, and `src/ui/store.js`, must stay free of DOM access, because
+`tests/run.mjs` imports those modules straight into Node 22.
 
 ## Code style
 

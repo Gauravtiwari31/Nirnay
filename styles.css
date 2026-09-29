@@ -21,9 +21,11 @@
   --warn: #9a6b1f;      /* ochre: tolerance band */
   --ok: #1b7a4b;        /* green: pass */
   --danger: #b03a2e;
+  --agent: #0e7490;     /* teal: everything belonging to the agent side */
 
   /* Shell-only tokens. */
-  --panel-2: #f4f5f7;   /* desk: page ground behind the paper */
+  --panel-2: #eaeef4;   /* desk: page ground behind the paper */
+  --agent-soft: #edf6f9; /* teal wash for agent-facing surfaces */
   --line: #dbdfe5;
   --line-soft: #eceef1;
   --radius: 2px;
@@ -80,8 +82,8 @@ code {
   justify-content: space-between;
   gap: 10px 24px;
   padding: 14px 20px;
-  border-bottom: 1px solid var(--line);
-  background: linear-gradient(180deg, var(--panel), var(--panel-2));
+  border-bottom: 2px solid var(--accent);
+  background: var(--panel);
 }
 
 .topbar h1 {
@@ -89,6 +91,13 @@ code {
   font-size: 17px;
   font-weight: 600;
   letter-spacing: 0.02em;
+}
+
+
+.tagline em {
+  color: var(--fg);
+  font-style: normal;
+  font-weight: 600;
 }
 
 .tagline {
@@ -122,12 +131,13 @@ code {
 }
 
 .status[data-state="on"] {
-  color: var(--ok);
-  border-color: color-mix(in srgb, var(--ok) 40%, var(--line));
+  color: var(--agent);
+  background: var(--agent-soft);
+  border-color: color-mix(in srgb, var(--agent) 40%, var(--line));
 }
 
 .status[data-state="on"]::before {
-  background: var(--ok);
+  background: var(--agent);
 }
 
 .status[data-state="error"] {
@@ -208,7 +218,7 @@ code {
 
 .panel > h2 {
   margin: 0 0 10px;
-  color: var(--muted);
+  color: var(--accent);
   font-size: 10.5px;
   font-weight: 600;
   letter-spacing: 0.14em;
@@ -218,7 +228,7 @@ code {
 .panel-sub {
   margin: -4px 0 12px;
   color: var(--muted);
-  font: 12px/1.4 var(--mono);
+  font: 12px/1.4 var(--sans);
 }
 
 .foot {
@@ -310,16 +320,18 @@ button:hover {
 }
 
 button:active {
-  background: #080d13;
+  background: var(--line-soft);
 }
 
 .btn-primary {
-  border-color: color-mix(in srgb, var(--accent) 50%, var(--line));
-  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #ffffff;
 }
 
 .btn-primary:hover {
-  border-color: var(--accent);
+  border-color: var(--fg);
+  background: var(--fg);
 }
 
 /* Range inputs need per-engine pseudo-elements; the rules cannot be merged, because a
@@ -472,7 +484,7 @@ canvas {
   margin: 14px 0 6px;
   padding-top: 10px;
   border-top: 1px solid var(--line-soft);
-  color: var(--muted);
+  color: var(--accent);
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.14em;
@@ -542,12 +554,12 @@ canvas {
 
 .chip[data-pass="true"] {
   background: var(--ok);
-  color: #04160f;
+  color: var(--bg);
 }
 
 .chip[data-pass="false"] {
   background: var(--danger);
-  color: #1c0406;
+  color: var(--bg);
 }
 
 /* ------------------------------------------------------------------ agent log */
@@ -586,7 +598,7 @@ canvas {
 }
 
 .log-time {
-  color: var(--muted);
+  color: var(--agent);
   font-variant-numeric: tabular-nums;
 }
 
@@ -596,6 +608,21 @@ canvas {
 }
 
 /* ----------------------------------------------------------------- agent note */
+
+/* The agent's own surfaces carry the teal, so the human side and the agent side
+   stay visually separable at a glance. */
+.panel-agent > h2 {
+  color: var(--agent);
+}
+
+.panel-note {
+  background: var(--agent-soft);
+  border-color: color-mix(in srgb, var(--agent) 25%, var(--line));
+}
+
+.panel-note > h2 {
+  color: var(--agent);
+}
 
 .panel-note p {
   margin: 0 0 9px;

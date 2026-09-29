@@ -49,7 +49,7 @@ try {
   } else {
     setStatus(
       "pending",
-      "WebMCP not available in this browser. The bench works normally; agent tools are inactive."
+      "WebMCP not available in this browser. Nirnay works normally; agent tools are inactive."
     );
   }
 } catch (err) {

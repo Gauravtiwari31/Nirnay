@@ -10,10 +10,10 @@
 import { test, assert, assertEqual, assertNull, assertClose, assertNear } from "./harness.mjs";
 
 import { cx, cadd, csub, cmul, cdiv, cabs, carg, cscale } from "../src/core/complex.js";
-import { polyMul, polyAdd, polyScale, polyTrim, polyEvalComplex, polyDeg } from "../src/core/poly.js";
+import { polyMul, polyAdd, polyScale, polyTrim, polyEvalComplex, polyDeg, polyDer } from "../src/core/poly.js";
 import { polyRoots } from "../src/core/roots.js";
 import { pidTF, series, closedLoop, errorTF, dcGain, polesZeros, toStateSpace } from "../src/core/tf.js";
-import { stepResponse, stepMetrics, chooseHorizon } from "../src/core/sim.js";
+import { stepResponse, stepMetrics, chooseHorizon, stepModeWeights } from "../src/core/sim.js";
 import { frequencyResponse, logspace, autoFreqRange, margins } from "../src/core/freq.js";
 import { rootLocus, criticalGain } from "../src/core/rlocus.js";
 
@@ -297,6 +297,14 @@ test("poly: polyDeg", () => {
   assertEqual(polyDeg([0, 0, 0]), -Infinity, "polyDeg of the zero polynomial");
 });
 
+test("poly: polyDer", () => {
+  // d/ds (s^3 + 2s^2 - 5s + 7) = 3s^2 + 4s - 5
+  assertArrayClose(polyDer([1, 2, -5, 7]), [3, 4, -5], 1e-12, "polyDer([1,2,-5,7])");
+  // d/ds (4s + 9) = 4
+  assertArrayClose(polyDer([4, 9]), [4], 1e-12, "polyDer([4,9])");
+  assertArrayClose(polyDer([5]), [0], 1e-12, "polyDer of a constant is [0]");
+});
+
 test("poly: polyEvalComplex by hand", () => {
   // p(s) = s^2 + 2s + 3 at s = 1 + 2i:
   //   s^2 = -3 + 4i, 2s = 2 + 4i  ->  (-3+4i) + (2+4i) + 3 = 2 + 8i
@@ -394,6 +402,33 @@ test("tf: pidTF degenerate forms", () => {
   const pi = pidTF(2, 3, 0);
   assertArrayClose(pi.num, [2, 3], 1e-12, "pidTF(2,3,0).num");
   assertArrayClose(pi.den, [1, 0], 1e-12, "pidTF(2,3,0).den");
+
+  // PD: Kp + Kd*N*s/(s+N) = ((Kp + Kd*N)s + Kp*N)/(s+N), NOT the full form over
+  // s(s+N), whose common factor of s would become a closed-loop pole at the origin.
+  // Kp=2, Kd=1, N=100 -> num [102, 200], den [1, 100]
+  const pd = pidTF(2, 0, 1, 100);
+  assertArrayClose(pd.num, [102, 200], 1e-12, "pidTF(2,0,1,100).num");
+  assertArrayClose(pd.den, [1, 100], 1e-12, "pidTF(2,0,1,100).den");
+
+  // Pure derivative is PD with Kp = 0: Kd*N*s/(s+N) -> num [100, 0], den [1, 100]
+  const d = pidTF(0, 0, 1, 100);
+  assertArrayClose(d.num, [100, 0], 1e-12, "pidTF(0,0,1,100).num");
+  assertArrayClose(d.den, [1, 100], 1e-12, "pidTF(0,0,1,100).den");
+});
+
+test("tf: a PD loop has no spurious pole at the origin", () => {
+  // Default plant 1/(s^2 + 0.6s + 1) under PD with Kp=2, Kd=1, N=100:
+  //   den = (s + 100)(s^2 + 0.6s + 1) + 102s + 200
+  //       = s^3 + 100.6s^2 + 61s + 100 + 102s + 200
+  //       = s^3 + 100.6s^2 + 163s + 300
+  // Routh: 100.6 * 163 = 16397.8 > 300, so every closed-loop pole is in the LHP.
+  const T = closedLoop(series(pidTF(2, 0, 1, 100), { num: [1], den: [1, 0.6, 1] }));
+  assertArrayClose(T.den, [1, 100.6, 163, 300], 1e-12, "closed-loop denominator of the PD loop");
+  const poles = polyRoots(T.den);
+  assertEqual(poles.length, 3, "a third-order closed loop has three poles");
+  for (const p of poles) {
+    assert(p.re < -1e-6, `PD closed-loop pole ${fc(p)} must be in the left half plane`);
+  }
 });
 
 test("tf: pidTF full realizable form", () => {
@@ -403,12 +438,6 @@ test("tf: pidTF full realizable form", () => {
   const c = pidTF(2, 3, 4, 10);
   assertArrayClose(c.num, [42, 23, 30], 1e-12, "pidTF(2,3,4,10).num");
   assertArrayClose(c.den, [1, 10, 0], 1e-12, "pidTF(2,3,4,10).den");
-
-  // Pure derivative: Kd only. Ki === 0 but Kd !== 0, so the full form applies.
-  // num = [0 + 1*100, 0*100 + 0, 0] = [100, 0, 0]
-  const d = pidTF(0, 0, 1, 100);
-  assertArrayClose(d.num, [100, 0, 0], 1e-12, "pidTF(0,0,1,100).num");
-  assertArrayClose(d.den, [1, 100, 0], 1e-12, "pidTF(0,0,1,100).den");
 
   // Default N is 100.
   const e = pidTF(1, 1, 1);
@@ -668,6 +697,33 @@ test("sim: steady-state error of a plant whose DC gain is not 1", () => {
   assert(m.overshoot <= 0.1, `an overdamped system must not overshoot; got ${m.overshoot}%`);
 });
 
+test("sim: stepModeWeights from hand partial fractions", () => {
+  // T = 1/((s+1)(s+2)):  y(t) = 1/2 - e^-t + (1/2)e^-2t
+  //   weights = |R|/|Re p| = 1/1 and 0.5/2
+  const a = stepModeWeights({ num: [1], den: [1, 3, 2] }, [cx(-1), cx(-2)]);
+  assertClose(a[0], 1, 1e-12, "weight of the pole at -1 in 1/((s+1)(s+2))");
+  assertClose(a[1], 0.25, 1e-12, "weight of the pole at -2 in 1/((s+1)(s+2))");
+
+  // T = (s+1.1)/((s+1)(s+5)): the pole at -1 is nearly cancelled by the zero at -1.1.
+  //   R(-1) = 0.1/((-1)(4))  = -0.025  -> weight 0.025/1 = 0.025
+  //   R(-5) = -3.9/((-5)(-4)) = -0.195 -> weight 0.195/5 = 0.039
+  // So the pole FURTHER from the axis carries more of the response.
+  const b = stepModeWeights({ num: [1, 1.1], den: [1, 6, 5] }, [cx(-1), cx(-5)]);
+  assertClose(b[0], 0.025, 1e-12, "weight of the near-cancelled pole at -1");
+  assertClose(b[1], 0.039, 1e-12, "weight of the pole at -5");
+  assert(b[1] > b[0], "the near-cancelled pole must weigh less than the far pole");
+
+  // T = 2/(s^2 + 2s + 2), poles -1 +/- j. At p = -1 + j, p*den'(p) = (-1+j)(2j) = -2 - 2j,
+  // so R = 2/(-2 - 2j) = -0.5 + 0.5j, |R| = sqrt(2)/2 and the weight is sqrt(2)/2.
+  const c = stepModeWeights({ num: [2], den: [1, 2, 2] }, [cx(-1, 1), cx(-1, -1)]);
+  assertClose(c[0], Math.SQRT2 / 2, 1e-12, "weight of the complex pole -1 + j");
+  assertClose(c[1], c[0], 1e-12, "conjugate poles carry equal weight");
+
+  // A repeated pole has den'(p) = 0 and a t*e^(pt) term: never negligible.
+  const d = stepModeWeights({ num: [1], den: [1, 2, 1] }, [cx(-1)]);
+  assertEqual(d[0], Infinity, "a repeated pole gets an infinite weight");
+});
+
 // ---------------------------------------------------------------------------
 // freq.js
 // ---------------------------------------------------------------------------
@@ -778,10 +834,31 @@ test("freq: margins of L = 1/(s(s+1)(s+2))", () => {
   assertClose(r.mag[0], 1, 1e-6, "|L| at the reported gain crossover must be 1 to bisection accuracy");
 });
 
+test("freq: a phase sitting on -180 deg has no gain margin", () => {
+  // L = 1/s^2: L(jw) = -1/w^2, real and negative, so the phase is exactly -180 deg at
+  // every frequency. |L| = 1 at w = 1, giving PM = 180 - 180 = 0. The phase never
+  // crosses -180, so there is no phase crossover and no gain margin: the closed loop
+  // s^2 + K is marginal at every K. Before this was handled, the first grid point was
+  // taken as a crossover and a meaningless GM of -160 dB at 1e-4 rad/s came back.
+  const m = margins({ num: [1], den: [1, 0, 0] });
+  assertNoBadNumbers(m, "margins of 1/s^2");
+  assertClose(m.gainCrossoverW, 1, 1e-6, "gain crossover of 1/s^2");
+  assertNear(m.phaseMarginDeg, 0, 1e-9, "phase margin of 1/s^2");
+  assertNull(m.phaseCrossoverW, "1/s^2 never crosses -180 deg, so phaseCrossoverW must be null");
+  assertNull(m.gainMargin, "1/s^2 has no gain margin");
+  assertNull(m.gainMarginDb, "1/s^2 has no gain margin in dB");
+  assertEqual(m.phaseOnBoundary, true, "1/s^2 sits on -180 deg everywhere, so phaseOnBoundary");
+
+  // A genuine crossing is not flagged.
+  assertEqual(margins({ num: [1], den: [1, 3, 2, 0] }).phaseOnBoundary, false,
+    "1/(s(s+1)(s+2)) crosses -180 deg, so phaseOnBoundary must be false");
+});
+
 test("freq: margins are null when the loop never crosses", () => {
   // |1/(jw+1)| < 1 for every w > 0 and the phase only reaches -90 deg.
   const m = margins({ num: [1], den: [1, 1] });
   assertNoBadNumbers(m, "margins of 1/(s+1)");
+  assertEqual(m.phaseOnBoundary, false, "1/(s+1) never reaches -180 deg, so phaseOnBoundary must be false");
   assertNull(m.gainCrossoverW, "|1/(s+1)| never reaches 1, so gainCrossoverW must be null");
   assertNull(m.phaseMarginDeg, "with no gain crossover the phase margin must be null");
   assertNull(m.phaseCrossoverW, "1/(s+1) never reaches -180 deg, so phaseCrossoverW must be null");

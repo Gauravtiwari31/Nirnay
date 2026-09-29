@@ -1,5 +1,5 @@
 /**
- * Single source of truth for the Nirnay.
+ * Single source of truth for Nirnay.
  *
  * The plots, the readout panel and the WebMCP site tools all read from this module: callers
  * mutate state through the setters and read every derived quantity through `analyse()`.
@@ -10,7 +10,7 @@
  */
 
 import { pidTF, series, closedLoop, polesZeros } from "../core/tf.js";
-import { stepResponse, stepMetrics } from "../core/sim.js";
+import { stepResponse, stepMetrics, stepModeWeights } from "../core/sim.js";
 import { autoFreqRange, frequencyResponse, logspace, margins } from "../core/freq.js";
 import { rootLocus } from "../core/rlocus.js";
 import { cabs } from "../core/complex.js";
@@ -56,6 +56,8 @@ const MAX_ORDER = 10;
 const BODE_POINTS = 400;
 /** A pole with |Re| below this counts as sitting on the imaginary axis, i.e. not stable. */
 const STABILITY_EPS = 1e-9;
+/** Step-mode weights this close, relatively, count as a tie when picking the dominant pole. */
+const WEIGHT_TIE = 1e-9;
 
 const GAIN_KEYS = ["Kp", "Ki", "Kd", "N"];
 const SPEC_KEYS = ["overshoot", "settlingTime", "steadyStateError", "phaseMargin"];
@@ -334,7 +336,7 @@ function derive() {
     zeros,
     openLoopPoles,
     openLoopZeros,
-    dominant: dominantPole(poles, stable),
+    dominant: dominantPole(loop, poles, stable),
     bode: attempt(() => computeBode(openLoop), { w: [], magDb: [], phaseDeg: [] }),
     locus: sanitiseLocus(attempt(() => rootLocus(openLoop), null)),
     stable,
@@ -448,7 +450,8 @@ function sanitiseMetrics(m, stable) {
 
 /**
  * @param {object|null} m raw margins output
- * @returns {object} the margins shape, with every non-finite field replaced by null
+ * @returns {object} the margins shape, with every non-finite field replaced by null and
+ *   `phaseOnBoundary` true only when the source says so explicitly
  */
 function sanitiseMargins(m) {
   const source = m === null || typeof m !== "object" ? {} : m;
@@ -458,6 +461,7 @@ function sanitiseMargins(m) {
     phaseMarginDeg: finiteOrNull(source.phaseMarginDeg),
     gainCrossoverW: finiteOrNull(source.gainCrossoverW),
     phaseCrossoverW: finiteOrNull(source.phaseCrossoverW),
+    phaseOnBoundary: source.phaseOnBoundary === true,
   };
 }
 
@@ -487,26 +491,66 @@ function sanitiseLocus(locus) {
 }
 
 /**
- * The pole that dominates the transient: the one closest to the imaginary axis from the left,
- * or, when nothing sits in the left half-plane, the rightmost pole overall.
+ * The pole that dominates the transient.
+ *
+ * For a stable loop this is the pole whose own term carries the most weight in the step
+ * response (see `stepModeWeights`), not simply the one closest to the imaginary axis: a slow
+ * pole nearly cancelled by a zero sits closest to the axis yet barely shows in the response,
+ * and reporting its damping ratio would contradict the overshoot. For a loop that is not
+ * stable, the rightmost pole dominates, because its growth swamps everything else.
+ *
+ * @param {TransferFunction} loop closed-loop transfer function
  * @param {Complex[]} poles closed-loop poles
  * @param {boolean} stable whether the closed loop is stable
  * @returns {{pole: Complex, zeta: number|null, wn: number|null}|null} null when there are no poles
  */
-function dominantPole(poles, stable) {
+function dominantPole(loop, poles, stable) {
   if (poles.length === 0) return null;
-  const leftHalf = poles.filter((p) => p.re < 0);
-  const pool = stable && leftHalf.length > 0 ? leftHalf : poles;
-  let pole = pool[0];
-  for (const p of pool) {
-    if (p.re > pole.re) pole = p;
-  }
+  const pole = stable ? heaviestPole(loop, poles) : rightmostPole(poles);
   const wn = cabs(pole);
   if (!Number.isFinite(wn) || wn === 0) {
     return { pole: { re: pole.re, im: pole.im }, zeta: null, wn: finiteOrNull(wn) };
   }
   // normaliseZero keeps a pole on the imaginary axis from reporting a damping ratio of -0.
   return { pole: { re: pole.re, im: pole.im }, zeta: normaliseZero(-pole.re / wn), wn };
+}
+
+/**
+ * @param {Complex[]} poles non-empty list of poles
+ * @returns {Complex} the pole with the largest real part
+ */
+function rightmostPole(poles) {
+  let best = poles[0];
+  for (const p of poles) {
+    if (p.re > best.re) best = p;
+  }
+  return best;
+}
+
+/**
+ * The stable pole with the largest step-mode weight. Ties go to the pole nearer the imaginary
+ * axis, which is the slower one and so the one that sets the settling time. Falls back to the
+ * rightmost pole if the weights cannot be computed.
+ * @param {TransferFunction} loop closed-loop transfer function
+ * @param {Complex[]} poles non-empty list of closed-loop poles, all in the left half-plane
+ * @returns {Complex} the dominant pole
+ */
+function heaviestPole(loop, poles) {
+  // A conjugate twin has exactly its partner's weight, so score each pair once, from its
+  // upper-half member; that is also the member the readout displays.
+  const candidates = poles.filter((p) => p.im >= 0);
+  const weights = attempt(() => stepModeWeights(loop, candidates), null);
+  if (candidates.length === 0 || weights === null || weights.length !== candidates.length) {
+    return rightmostPole(poles);
+  }
+  let best = 0;
+  for (let i = 1; i < candidates.length; i += 1) {
+    const w = weights[i];
+    const top = weights[best];
+    const tied = w === top || Math.abs(w - top) <= WEIGHT_TIE * Math.max(w, top);
+    if (tied ? candidates[i].re > candidates[best].re : w > top) best = i;
+  }
+  return candidates[best];
 }
 
 /**

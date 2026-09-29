@@ -22,6 +22,9 @@ const BISECT_STEPS = 80;
 /** Magnitudes below this are treated as "at the origin" and excluded from range finding. */
 const ORIGIN_EPS = 1e-12;
 
+/** A phase within this many degrees of -180 counts as sitting on it, not beside it. */
+const PHASE_EPS_DEG = 1e-9;
+
 /**
  * Clamp a value into an inclusive range.
  * @param {number} v value
@@ -203,14 +206,22 @@ function refineCrossing(f, w, i) {
  * sign there exactly. Bracketing that root with the unwrapped phase first is what
  * keeps it from latching onto the phase = 0 crossing, where Im{L} also vanishes.
  *
+ * Only a genuine phase crossing defines a gain margin. A phase that sits exactly on
+ * -180 degrees never crosses it — `L = K/s^2` is -180 at every frequency — and such a
+ * loop is already on the stability boundary at any gain, so it has no gain margin at
+ * all. `phaseOnBoundary` flags that case, which a plain `null` would otherwise report
+ * as an infinite margin.
+ *
  * @param {{num: number[], den: number[]}} L the open-loop transfer function
  * @returns {{
  *   gainMarginDb: number|null,
  *   gainMargin: number|null,
  *   phaseMarginDeg: number|null,
  *   gainCrossoverW: number|null,
- *   phaseCrossoverW: number|null
- * }} margins, with `null` wherever the corresponding crossing does not exist
+ *   phaseCrossoverW: number|null,
+ *   phaseOnBoundary: boolean
+ * }} margins, with `null` wherever the corresponding crossing does not exist;
+ *   `phaseOnBoundary` is true when the phase is -180 degrees at every scanned frequency
  */
 export function margins(L) {
   const out = {
@@ -219,6 +230,7 @@ export function margins(L) {
     phaseMarginDeg: null,
     gainCrossoverW: null,
     phaseCrossoverW: null,
+    phaseOnBoundary: false,
   };
 
   const range = autoFreqRange(L);
@@ -254,12 +266,20 @@ export function margins(L) {
     out.phaseMarginDeg = pm;
   }
 
-  // --- phase crossover: the first w where the phase reaches -180 -----------
-  for (let i = 1; i < w.length; i += 1) {
-    const a = resp.phaseDeg[i - 1] + 180;
-    const b = resp.phaseDeg[i] + 180;
-    if (!Number.isFinite(a) || !Number.isFinite(b)) continue;
-    if (a === 0 || a < 0 !== b < 0) {
+  // --- phase crossover: the first w where the phase passes through -180 ----
+  // Samples sitting on -180 are skipped rather than taken as crossings: a crossing
+  // needs the phase on one side of -180 and then on the other.
+  let side = 0;
+  let sawFinite = false;
+  let allOnBoundary = true;
+  for (let i = 0; i < w.length; i += 1) {
+    const a = resp.phaseDeg[i] + 180;
+    if (!Number.isFinite(a)) continue;
+    sawFinite = true;
+    if (Math.abs(a) <= PHASE_EPS_DEG) continue;
+    allOnBoundary = false;
+    const s = a < 0 ? -1 : 1;
+    if (side !== 0 && s !== side) {
       const wpc = refineCrossing((x) => evalAt(L, x).im, w, i);
       const mag = cabs(evalAt(L, wpc));
       if (Number.isFinite(mag) && mag > 0) {
@@ -269,7 +289,9 @@ export function margins(L) {
       }
       break;
     }
+    side = s;
   }
+  out.phaseOnBoundary = sawFinite && allOnBoundary;
 
   return out;
 }

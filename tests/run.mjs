@@ -9,6 +9,7 @@
 
 import { run } from "./harness.mjs";
 import "./core.test.mjs";
+import "./store.test.mjs";
 
 const failures = await run();
 process.exit(failures > 0 ? 1 : 0);

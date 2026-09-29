@@ -1,5 +1,5 @@
 /**
- * WebMCP site tools for the Nirnay.
+ * WebMCP site tools for Nirnay.
  *
  * The three plots on this page are canvas renderings. An agent cannot read them,
  * and a screenshot only lets it guess at numbers. These tools expose the actual
@@ -25,6 +25,12 @@ import { logAgent } from "../ui/controls.js";
 
 /** Tolerance for treating a pole as real when pairing conjugates for display. */
 const REAL_EPS = 1e-9;
+
+/**
+ * A pole with |Re| at or below this sits on the imaginary axis. Matches the store's
+ * stability threshold, so "marginal" here and "not stable" there always agree.
+ */
+const AXIS_EPS = 1e-9;
 
 /**
  * Format a number for a tool result: fixed notation where it reads well, scientific
@@ -68,14 +74,17 @@ function formatPoly(coeffs) {
 }
 
 /**
- * Render a transfer function as a ratio of polynomials.
+ * Render a transfer function as a ratio of polynomials. A numerator with more than one
+ * term is bracketed too: `s + 2 / (s + 3)` would read as `s + (2 / (s + 3))`.
  * @param {{num: number[], den: number[]}} tf the transfer function
- * @returns {string} e.g. "1 / (s^2 + 0.6s + 1)"
+ * @returns {string} e.g. "1 / (s^2 + 0.6s + 1)" or "(2s + 1) / (s^2 + 3s)"
  */
 function formatTF(tf) {
   const den = formatPoly(tf.den);
   const num = formatPoly(tf.num);
-  return den === "1" ? num : `${num} / (${den})`;
+  if (den === "1") return num;
+  const terms = tf.num.filter((c) => Number.isFinite(c) && c !== 0).length;
+  return `${terms > 1 ? `(${num})` : num} / (${den})`;
 }
 
 /**
@@ -142,6 +151,52 @@ function formatSpec(spec) {
 }
 
 /**
+ * Explain why a design has no steady state, from where its closed-loop poles sit.
+ *
+ * `finalValue` is null for every closed loop that is not stable, and the causes call
+ * for different fixes: a right-half-plane pole needs the loop stabilised, while a pole
+ * at the origin or on the imaginary axis sits exactly on the boundary. Naming the
+ * wrong one sends the agent after the wrong fix.
+ *
+ * @param {{poles: {re: number, im: number}[]}} a an `analyse()` result
+ * @returns {string} a clause beginning "the closed loop ..."
+ */
+function noSteadyState(a) {
+  const rhp = a.poles.filter((p) => p.re > AXIS_EPS).length;
+  if (rhp > 0) {
+    return `the closed loop is unstable (${rhp} pole${rhp === 1 ? "" : "s"} in the right ` +
+      "half-plane), so the response diverges";
+  }
+  const onAxis = a.poles.filter((p) => Math.abs(p.re) <= AXIS_EPS);
+  if (onAxis.some((p) => Math.abs(p.im) <= AXIS_EPS)) {
+    return "the closed loop has a pole at the origin (a free integrator), so the response " +
+      "ramps instead of settling";
+  }
+  if (onAxis.length > 0) {
+    return "the closed loop is marginally stable (poles on the imaginary axis), so the " +
+      "response oscillates without settling";
+  }
+  return "the closed loop could not be evaluated for this design";
+}
+
+/**
+ * Describe a missing gain margin. Usually the phase never reaches -180 deg and the margin
+ * is infinite; but a phase sitting on -180 deg at every frequency (L = K/s^2) leaves the
+ * loop marginal at any gain, and calling that "infinite" would be exactly backwards.
+ * @param {{phaseOnBoundary: boolean}} g the `margins` block of an `analyse()` result
+ * @returns {{value: string, reason: string}} the margin as a word, and why
+ */
+function noGainMargin(g) {
+  return g.phaseOnBoundary
+    ? {
+      value: "undefined",
+      reason: "the open-loop phase sits at -180 deg at every frequency, so the loop is " +
+        "marginal at any gain",
+    }
+    : { value: "infinite", reason: "the open-loop phase never reaches -180 deg" };
+}
+
+/**
  * The standard report block returned by every tool that changes something, and by
  * `get_system`. Dense on purpose: one block tells the agent the whole state of the
  * design, so it can decide its next move without another call.
@@ -155,14 +210,14 @@ function report() {
 
   const preset = s.plantKey === null ? "custom" : `preset "${s.plantKey}"`;
   const gm = g.gainMargin === null
-    ? "GM infinite (open-loop phase never reaches -180 deg)"
+    ? `GM ${noGainMargin(g).value} (${noGainMargin(g).reason})`
     : `GM ${n(g.gainMargin)} (${n(g.gainMarginDb)} dB) @ ${n(g.phaseCrossoverW)} rad/s`;
   const pm = g.phaseMarginDeg === null
     ? "PM undefined (|L| never crosses 1, so there is no gain crossover)"
     : `PM ${n(g.phaseMarginDeg)} deg @ ${n(g.gainCrossoverW)} rad/s`;
 
   const step = m.finalValue === null
-    ? "Step:  no steady state (the loop contains a free integrator), so overshoot and " +
+    ? `Step:  no steady state - ${noSteadyState(a)}; overshoot, settling time and ` +
       "steady-state error are undefined"
     : `Step:  overshoot ${n(m.overshoot)}% | rise ${n(m.riseTime)} s | settle ` +
       `${n(m.settlingTime)} s | peak ${n(m.peakValue)} @ ${n(m.peakTime)} s | ` +
@@ -286,8 +341,8 @@ const TOOLS = [
       ];
       if (m.finalValue === null) {
         lines.push(
-          "No steady state: the closed loop contains a free integrator, so the response does " +
-          "not converge and overshoot, settling time and steady-state error are undefined."
+          `No steady state: ${noSteadyState(a)}. Overshoot, rise time, settling time and ` +
+          "steady-state error are undefined."
         );
       } else {
         lines.push(
@@ -343,7 +398,7 @@ const TOOLS = [
       );
       lines.push(
         g.gainMargin === null
-          ? "gain margin:      infinite - the open-loop phase never reaches -180 deg"
+          ? `gain margin:      ${noGainMargin(g).value} - ${noGainMargin(g).reason}`
           : `gain margin:      ${n(g.gainMargin)} linear (${n(g.gainMarginDb)} dB) at ` +
             `${n(g.phaseCrossoverW)} rad/s`
       );
@@ -388,12 +443,16 @@ const TOOLS = [
             `${n(a.dominant.zeta)} and natural frequency wn ${n(a.dominant.wn)} rad/s`
       );
       const crit = a.margins.gainMargin;
-      lines.push(
-        crit === null
-          ? "critical gain: none - increasing the loop gain never destabilises this loop"
-          : `critical gain: the loop reaches the stability boundary at ${n(crit)} times the ` +
-            `current gain, with poles crossing the imaginary axis at ${n(a.margins.phaseCrossoverW)} rad/s`
-      );
+      let critLine;
+      if (crit !== null) {
+        critLine = `critical gain: the loop reaches the stability boundary at ${n(crit)} times the ` +
+          `current gain, with poles crossing the imaginary axis at ${n(a.margins.phaseCrossoverW)} rad/s`;
+      } else if (a.margins.phaseOnBoundary) {
+        critLine = `critical gain: undefined - ${noGainMargin(a.margins).reason}`;
+      } else {
+        critLine = "critical gain: none - increasing the loop gain never destabilises this loop";
+      }
+      lines.push(critLine);
       return lines.join("\n");
     },
   },
@@ -607,7 +666,7 @@ const TOOLS = [
 /**
  * Register every site tool on the top-level document, if this browser supports WebMCP.
  *
- * Feature-detection is deliberate rather than defensive: the bench is a complete,
+ * Feature-detection is deliberate rather than defensive: Nirnay is a complete,
  * usable instrument on its own, and a browser without WebMCP should get the page
  * working normally rather than an error.
  *

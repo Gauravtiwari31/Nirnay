@@ -172,6 +172,33 @@ await test("partial gain updates leave the others alone", async () => {
   check("only Kp changed", s.Kp === 9 && s.Ki === 2 && s.Kd === 1, JSON.stringify(s));
 });
 
+await test("PD control is not reported as unstable", async () => {
+  setPlant({ key: "second-order" });
+  const body = bodyOf(await byName.set_controller_gains.execute({ Kp: 2, Ki: 0, Kd: 1 }));
+  check("PD loop reads as stable", /Closed loop: STABLE/.test(body), body);
+  check("PD loop has step metrics", /overshoot \d/.test(body), body);
+  check("PD loop has no pole at the origin", !analyse().poles.some((p) => p.re === 0 && p.im === 0),
+    JSON.stringify(analyse().poles));
+});
+
+await test("the dominant pole is the one that shapes the response", async () => {
+  // The slow real pole of this design is nearly cancelled by a zero; the complex pair
+  // is what produces the overshoot, so it is the one that must be reported.
+  setPlant({ key: "second-order" });
+  await byName.set_controller_gains.execute({ Kp: 12, Ki: 4, Kd: 3, N: 100 });
+  const body = bodyOf(await byName.get_pole_zero_map.execute({}));
+  check("dominant pole is the complex pair", /dominant pole: -1\.6876 \+ 3\.0714i/.test(body), body);
+});
+
+await test("multi-term numerators are bracketed", async () => {
+  setPlant({ key: "second-order" });
+  const body = bodyOf(await byName.set_controller_gains.execute({ Kp: 12, Ki: 4, Kd: 3, N: 100 }));
+  check("controller numerator is bracketed",
+    body.includes("C(s) = (312s^2 + 1204s + 400) / (s^2 + 100s)"), body);
+  check("single-term numerator is left bare",
+    body.includes("Plant (preset \"second-order\"): 1 / (s^2 + 0.6s + 1)"), body);
+});
+
 await test("set_plant by preset", async () => {
   const body = bodyOf(await byName.set_plant.execute({ preset: "dc-motor" }));
   check("plantKey updated", getState().plantKey === "dc-motor", getState().plantKey);
@@ -241,6 +268,33 @@ await test("an unstable design is reported as such", async () => {
   const body = bodyOf(await byName.get_pole_zero_map.execute({}));
   check("pole-zero map states instability", /UNSTABLE/.test(body), body);
   check("pole-zero map lists poles", /closed-loop poles:/.test(body), body);
+});
+
+await test("a missing steady state is explained by where the poles sit", async () => {
+  // Right-half-plane poles: T = 0.1/(s^2 - s + 2.1) has no integrator at all.
+  await byName.set_plant.execute({ preset: "unstable" });
+  await byName.set_controller_gains.execute({ Kp: 0.1, Ki: 0, Kd: 0 });
+  const rhp = bodyOf(await byName.run_step_response.execute({}));
+  check("RHP poles are named as the cause", /2 poles in the right half-plane/.test(rhp), rhp);
+  check("RHP case does not blame an integrator", !/integrator/.test(rhp), rhp);
+
+  // Imaginary-axis poles: s^2 + 1 under P control of the double integrator.
+  await byName.set_plant.execute({ preset: "double-integrator" });
+  await byName.set_controller_gains.execute({ Kp: 1 });
+  const marginal = bodyOf(await byName.get_system.execute({}));
+  check("imaginary-axis poles read as marginal", /marginally stable/.test(marginal), marginal);
+  const freq = bodyOf(await byName.get_frequency_response.execute({}));
+  check("a phase sitting on -180 deg gives no gain margin",
+    /gain margin: +undefined - the open-loop phase sits at -180 deg/.test(freq), freq);
+  check("no grid-edge gain margin is reported", !/e-8|-160 dB/.test(freq), freq);
+  const pz = bodyOf(await byName.get_pole_zero_map.execute({}));
+  check("the critical gain is undefined, not 'none'", /critical gain: undefined/.test(pz), pz);
+
+  // Pole at the origin: the DC motor's own integrator with the controller switched off.
+  await byName.set_plant.execute({ preset: "dc-motor" });
+  await byName.set_controller_gains.execute({ Kp: 0, Ki: 0, Kd: 0 });
+  const origin = bodyOf(await byName.run_step_response.execute({}));
+  check("a pole at the origin is named as a free integrator", /pole at the origin/.test(origin), origin);
 });
 
 await test("the activity log records agent calls", () => {

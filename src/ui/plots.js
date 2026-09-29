@@ -1,5 +1,5 @@
 /**
- * Canvas rendering for the Nirnay.
+ * Canvas rendering for Nirnay.
  *
  * Three panels are drawn from one `analyse()` object (see the module contract):
  *   - step response : unit-step output, settling band, peak and settling markers
@@ -1314,9 +1314,11 @@ function drawBode(ctx, panel, t, a) {
         colour: specColour(t, results.phaseMargin),
       },
       {
+        // No gain margin usually means an infinite one; a phase sitting on -180 deg at
+        // every frequency means the loop is already marginal and there is none at all.
         label: "gain margin",
-        value: gmDb === null ? SYM.INFINITY : fmtVal(gmDb, "dB"),
-        colour: gmDb === null ? t.ok : gmDb > 0 ? t.ok : t.warn,
+        value: gmDb !== null ? fmtVal(gmDb, "dB") : margins.phaseOnBoundary ? SYM.NONE : SYM.INFINITY,
+        colour: gmDb !== null ? (gmDb > 0 ? t.ok : t.warn) : margins.phaseOnBoundary ? t.warn : t.ok,
       },
     ],
     "tr",
