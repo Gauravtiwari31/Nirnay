@@ -181,6 +181,15 @@ await test("PD control is not reported as unstable", async () => {
     JSON.stringify(analyse().poles));
 });
 
+await test("the dominant pole is the one that shapes the response", async () => {
+  // The slow real pole of this design is nearly cancelled by a zero; the complex pair
+  // is what produces the overshoot, so it is the one that must be reported.
+  setPlant({ key: "second-order" });
+  await byName.set_controller_gains.execute({ Kp: 12, Ki: 4, Kd: 3, N: 100 });
+  const body = bodyOf(await byName.get_pole_zero_map.execute({}));
+  check("dominant pole is the complex pair", /dominant pole: -1\.6876 \+ 3\.0714i/.test(body), body);
+});
+
 await test("set_plant by preset", async () => {
   const body = bodyOf(await byName.set_plant.execute({ preset: "dc-motor" }));
   check("plantKey updated", getState().plantKey === "dc-motor", getState().plantKey);

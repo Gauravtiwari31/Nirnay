@@ -141,7 +141,7 @@ src/core/
   poly.js               Polynomial arithmetic in descending powers.
   roots.js              Durand-Kerner simultaneous root finder.
   tf.js                 Transfer functions: PID, series, closed loop, controllable canonical form.
-  sim.js                RK4 step response and time-domain metrics.
+  sim.js                RK4 step response, time-domain metrics, per-pole step weights.
   freq.js               Frequency response, log-spaced grids, gain and phase margins.
   rlocus.js             Root locus with continuity-sorted branches, and the critical gain.
 src/ui/
@@ -153,6 +153,7 @@ tests/
   run.mjs               Node test runner.
   harness.mjs           Dependency-free assertions and reporting.
   core.test.mjs         Numeric tests for everything under src/core/.
+  store.test.mjs        Tests for the store's derived analysis.
   browser.html          Browser integration tests for the WebMCP layer and the UI.
 ```
 
@@ -168,7 +169,8 @@ can import those modules unchanged and test the numerics directly.
 node tests/run.mjs
 ```
 
-No test framework and no dependencies — Node 22 imports the core modules exactly as they ship.
+No test framework and no dependencies — Node 22 imports the core modules and the store exactly
+as they ship.
 The suite checks the numerics against results that are known independently of this code:
 
 - Analytic second-order formulae. For a plant with known `zeta` and `wn`, the simulated overshoot

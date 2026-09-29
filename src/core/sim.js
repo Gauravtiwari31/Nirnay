@@ -2,9 +2,12 @@
  * Time-domain simulation: unit-step response by fixed-step RK4 on the
  * controllable canonical realisation, plus the step-response metrics an agent
  * actually tunes against (overshoot, rise time, settling time, steady-state
- * error). Pure numerics, no DOM.
+ * error), and the per-pole weights used to decide which pole dominates the
+ * response. Pure numerics, no DOM.
  */
 
+import { cabs, cdiv, cmul } from "./complex.js";
+import { polyDer, polyEvalComplex } from "./poly.js";
 import { polyRoots } from "./roots.js";
 import { dcGain, toStateSpace } from "./tf.js";
 
@@ -157,6 +160,30 @@ export function stepResponse(tf, opts = {}) {
   }
 
   return { t, y, tEnd: t[t.length - 1], truncated };
+}
+
+/**
+ * How much each pole's own term contributes to the unit-step response.
+ *
+ * With simple poles, the step response expands as `y(t) = T(0) + sum_i R_i e^(p_i t)`,
+ * where `R_i` is the residue of `T(s)/s` at `p_i`, i.e. `num(p_i) / (p_i * den'(p_i))`.
+ * A pole's weight is the area under the magnitude of its term, `|R_i| / |Re p_i|`: large
+ * when the term is both big and slow to decay. A pole nearly cancelled by a zero has a
+ * tiny residue and drops out, even when it is the pole closest to the imaginary axis —
+ * the case in which "closest to the axis" alone picks the wrong dominant pole.
+ *
+ * @param {{num:number[], den:number[]}} tf a stable transfer function
+ * @param {{re:number, im:number}[]} poles poles of `tf`, each with a negative real part
+ * @returns {number[]} one weight per pole, index-aligned. A repeated pole (where
+ *   `den'(p) = 0`) carries a `t*e^(pt)` term that is never negligible, and gets Infinity.
+ */
+export function stepModeWeights(tf, poles) {
+  const dden = polyDer(tf.den);
+  return poles.map((p) => {
+    const r = cdiv(polyEvalComplex(tf.num, p), cmul(p, polyEvalComplex(dden, p)));
+    const w = cabs(r) / Math.abs(p.re);
+    return Number.isFinite(w) ? w : Infinity;
+  });
 }
 
 /**

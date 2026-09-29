@@ -81,6 +81,19 @@ export function polyScale(a, k) {
 }
 
 /**
+ * Derivative of a polynomial.
+ * @param {number[]} a Coefficients, descending powers.
+ * @returns {number[]} The derivative, descending powers; `[0]` for a constant or empty input.
+ */
+export function polyDer(a) {
+  const n = a.length - 1;
+  if (n <= 0) return [0];
+  const out = new Array(n);
+  for (let i = 0; i < n; i++) out[i] = a[i] * (n - i);
+  return out;
+}
+
+/**
  * Drop leading coefficients that are negligible relative to the largest one.
  *
  * Keeps at least one coefficient, so the zero polynomial trims to `[0]` and the

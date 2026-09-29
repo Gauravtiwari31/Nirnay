@@ -10,10 +10,10 @@
 import { test, assert, assertEqual, assertNull, assertClose, assertNear } from "./harness.mjs";
 
 import { cx, cadd, csub, cmul, cdiv, cabs, carg, cscale } from "../src/core/complex.js";
-import { polyMul, polyAdd, polyScale, polyTrim, polyEvalComplex, polyDeg } from "../src/core/poly.js";
+import { polyMul, polyAdd, polyScale, polyTrim, polyEvalComplex, polyDeg, polyDer } from "../src/core/poly.js";
 import { polyRoots } from "../src/core/roots.js";
 import { pidTF, series, closedLoop, errorTF, dcGain, polesZeros, toStateSpace } from "../src/core/tf.js";
-import { stepResponse, stepMetrics, chooseHorizon } from "../src/core/sim.js";
+import { stepResponse, stepMetrics, chooseHorizon, stepModeWeights } from "../src/core/sim.js";
 import { frequencyResponse, logspace, autoFreqRange, margins } from "../src/core/freq.js";
 import { rootLocus, criticalGain } from "../src/core/rlocus.js";
 
@@ -295,6 +295,14 @@ test("poly: polyDeg", () => {
   assertEqual(polyDeg([0, 0, 7]), 0, "polyDeg([0,0,7]) after trimming leading zeros");
   assertEqual(polyDeg([5]), 0, "polyDeg of a constant");
   assertEqual(polyDeg([0, 0, 0]), -Infinity, "polyDeg of the zero polynomial");
+});
+
+test("poly: polyDer", () => {
+  // d/ds (s^3 + 2s^2 - 5s + 7) = 3s^2 + 4s - 5
+  assertArrayClose(polyDer([1, 2, -5, 7]), [3, 4, -5], 1e-12, "polyDer([1,2,-5,7])");
+  // d/ds (4s + 9) = 4
+  assertArrayClose(polyDer([4, 9]), [4], 1e-12, "polyDer([4,9])");
+  assertArrayClose(polyDer([5]), [0], 1e-12, "polyDer of a constant is [0]");
 });
 
 test("poly: polyEvalComplex by hand", () => {
@@ -687,6 +695,33 @@ test("sim: steady-state error of a plant whose DC gain is not 1", () => {
   assertClose(m.finalValue, 0.5, 1e-5, "finalValue = DC gain of 1/((s+1)(s+2))");
   assertClose(m.steadyStateError, 0.5, 1e-4, "steadyStateError must be 1 - finalValue, not a normalised error");
   assert(m.overshoot <= 0.1, `an overdamped system must not overshoot; got ${m.overshoot}%`);
+});
+
+test("sim: stepModeWeights from hand partial fractions", () => {
+  // T = 1/((s+1)(s+2)):  y(t) = 1/2 - e^-t + (1/2)e^-2t
+  //   weights = |R|/|Re p| = 1/1 and 0.5/2
+  const a = stepModeWeights({ num: [1], den: [1, 3, 2] }, [cx(-1), cx(-2)]);
+  assertClose(a[0], 1, 1e-12, "weight of the pole at -1 in 1/((s+1)(s+2))");
+  assertClose(a[1], 0.25, 1e-12, "weight of the pole at -2 in 1/((s+1)(s+2))");
+
+  // T = (s+1.1)/((s+1)(s+5)): the pole at -1 is nearly cancelled by the zero at -1.1.
+  //   R(-1) = 0.1/((-1)(4))  = -0.025  -> weight 0.025/1 = 0.025
+  //   R(-5) = -3.9/((-5)(-4)) = -0.195 -> weight 0.195/5 = 0.039
+  // So the pole FURTHER from the axis carries more of the response.
+  const b = stepModeWeights({ num: [1, 1.1], den: [1, 6, 5] }, [cx(-1), cx(-5)]);
+  assertClose(b[0], 0.025, 1e-12, "weight of the near-cancelled pole at -1");
+  assertClose(b[1], 0.039, 1e-12, "weight of the pole at -5");
+  assert(b[1] > b[0], "the near-cancelled pole must weigh less than the far pole");
+
+  // T = 2/(s^2 + 2s + 2), poles -1 +/- j. At p = -1 + j, p*den'(p) = (-1+j)(2j) = -2 - 2j,
+  // so R = 2/(-2 - 2j) = -0.5 + 0.5j, |R| = sqrt(2)/2 and the weight is sqrt(2)/2.
+  const c = stepModeWeights({ num: [2], den: [1, 2, 2] }, [cx(-1, 1), cx(-1, -1)]);
+  assertClose(c[0], Math.SQRT2 / 2, 1e-12, "weight of the complex pole -1 + j");
+  assertClose(c[1], c[0], 1e-12, "conjugate poles carry equal weight");
+
+  // A repeated pole has den'(p) = 0 and a t*e^(pt) term: never negligible.
+  const d = stepModeWeights({ num: [1], den: [1, 2, 1] }, [cx(-1)]);
+  assertEqual(d[0], Infinity, "a repeated pole gets an infinite weight");
 });
 
 // ---------------------------------------------------------------------------
