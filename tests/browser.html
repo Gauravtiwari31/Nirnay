@@ -190,6 +190,15 @@ await test("the dominant pole is the one that shapes the response", async () => 
   check("dominant pole is the complex pair", /dominant pole: -1\.6876 \+ 3\.0714i/.test(body), body);
 });
 
+await test("multi-term numerators are bracketed", async () => {
+  setPlant({ key: "second-order" });
+  const body = bodyOf(await byName.set_controller_gains.execute({ Kp: 12, Ki: 4, Kd: 3, N: 100 }));
+  check("controller numerator is bracketed",
+    body.includes("C(s) = (312s^2 + 1204s + 400) / (s^2 + 100s)"), body);
+  check("single-term numerator is left bare",
+    body.includes("Plant (preset \"second-order\"): 1 / (s^2 + 0.6s + 1)"), body);
+});
+
 await test("set_plant by preset", async () => {
   const body = bodyOf(await byName.set_plant.execute({ preset: "dc-motor" }));
   check("plantKey updated", getState().plantKey === "dc-motor", getState().plantKey);

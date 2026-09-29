@@ -74,14 +74,17 @@ function formatPoly(coeffs) {
 }
 
 /**
- * Render a transfer function as a ratio of polynomials.
+ * Render a transfer function as a ratio of polynomials. A numerator with more than one
+ * term is bracketed too: `s + 2 / (s + 3)` would read as `s + (2 / (s + 3))`.
  * @param {{num: number[], den: number[]}} tf the transfer function
- * @returns {string} e.g. "1 / (s^2 + 0.6s + 1)"
+ * @returns {string} e.g. "1 / (s^2 + 0.6s + 1)" or "(2s + 1) / (s^2 + 3s)"
  */
 function formatTF(tf) {
   const den = formatPoly(tf.den);
   const num = formatPoly(tf.num);
-  return den === "1" ? num : `${num} / (${den})`;
+  if (den === "1") return num;
+  const terms = tf.num.filter((c) => Number.isFinite(c) && c !== 0).length;
+  return `${terms > 1 ? `(${num})` : num} / (${den})`;
 }
 
 /**
